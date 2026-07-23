@@ -66,6 +66,8 @@ async function api(req,res,url) {
     if(method==='POST'&&pathname==='/api/token')return json(res,200,{access_token:'demo-token'});
     if(method==='POST'&&pathname==='/api/session/discord')return json(res,200,{user:publicUser(user)});
     if(method==='GET'&&pathname==='/api/me')return json(res,200,{user:publicUser(user),inventory:user.inventory,history:user.history});
+    if(method==='GET'&&pathname==='/api/fair')return json(res,200,{clientSeed:user.fair?.clientSeed||'',nonce:Number(user.fair?.nonce)||0,serverHash:user.fair?.serverHash||'',history:Array.isArray(user.fair?.history)?user.fair.history.slice(0,30):[]});
+    if(method==='PATCH'&&pathname==='/api/fair/client-seed'){const body=await readBody(req),seed=String(body.clientSeed||'').trim().slice(0,64);if(seed.length<3)throw new Error('Client seed trop court');user.fair.clientSeed=seed;save();return json(res,200,{clientSeed:seed,nonce:user.fair.nonce,serverHash:user.fair.serverHash});}
     if(method==='GET'&&pathname==='/api/demo/users')return json(res,200,{users:getState().users.map(publicUser)});
     if(method==='POST'&&pathname==='/api/demo/switch'){
       const body=await readBody(req), target=getUser(body.userId); if(!target)throw new Error('Profil introuvable');
@@ -89,11 +91,11 @@ async function api(req,res,url) {
     if(method==='POST'&&pathname==='/api/admin/cases'){const body=await readBody(req),entry=casePayload(body);getState().cases.push(entry);save();return json(res,200,entry);}
     m=pathname.match(/^\/api\/admin\/cases\/([^/]+)$/);if(method==='PUT'&&m){const body=await readBody(req),idx=getState().cases.findIndex(c=>c.id===m[1]);if(idx<0)throw new Error('Caisse introuvable');getState().cases[idx]=casePayload(body,getState().cases[idx]);save();return json(res,200,getState().cases[idx]);}
     m=pathname.match(/^\/api\/admin\/users\/([^/]+)$/);if(method==='PATCH'&&m){const body=await readBody(req),target=getUser(m[1]);if(!target)throw new Error('Utilisateur introuvable');if(Number.isFinite(Number(body.balance)))target.balance=Math.max(0,Number(body.balance));if(typeof body.banned==='boolean')target.banned=body.banned;if(typeof body.admin==='boolean')target.admin=body.admin;save();return json(res,200,publicUser(target));}
-    if(method==='PATCH'&&pathname==='/api/admin/settings'){const body=await readBody(req);Object.assign(getState().settings,{dailyGift:Math.max(0,Number(body.dailyGift)||0),openingDurationMs:Math.max(1500,Number(body.openingDurationMs)||5200),upgradeDurationMs:Math.max(3000,Number(body.upgradeDurationMs)||9500)});save();return json(res,200,getState().settings);}
+    if(method==='PATCH'&&pathname==='/api/admin/settings'){const body=await readBody(req);Object.assign(getState().settings,{dailyGift:Math.max(0,Number(body.dailyGift)||0),openingDurationMs:Math.max(1500,Number(body.openingDurationMs)||5200),upgradeDurationMs:Math.max(3000,Number(body.upgradeDurationMs)||9800),battleRoundDurationMs:Math.max(2500,Number(body.battleRoundDurationMs)||5600)});save();return json(res,200,getState().settings);}
     if(method==='POST'&&pathname==='/api/admin/reset'){reset();return json(res,200,{ok:true});}
     return json(res,404,{error:'Route API introuvable'});
   } catch(error){return json(res,400,{error:error.message||'Erreur'});}
 }
 
 const server=http.createServer(async(req,res)=>{const url=new URL(req.url,'http://local');if(url.pathname.startsWith('/api/'))return api(req,res,url);if(!serveStatic(req,res)){res.writeHead(404);res.end('Not found');}});
-server.listen(port,'0.0.0.0',()=>console.log(`DropForge Discord Demo : http://localhost:${port}`));
+server.listen(port,'0.0.0.0',()=>console.log(`Skinova Discord Demo : http://localhost:${port}`));

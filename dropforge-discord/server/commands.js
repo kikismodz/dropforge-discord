@@ -1,11 +1,11 @@
 import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 
 export const commandData = [
-  new SlashCommandBuilder().setName('dropforge').setDescription('Ouvrir DropForge Activity'),
+  new SlashCommandBuilder().setName('skinova').setDescription('Ouvrir Skinova Activity'),
   new SlashCommandBuilder().setName('daily').setDescription('Récupérer les crédits fictifs quotidiens'),
-  new SlashCommandBuilder().setName('profile').setDescription('Afficher ton profil DropForge'),
+  new SlashCommandBuilder().setName('profile').setDescription('Afficher ton profil Skinova'),
   new SlashCommandBuilder().setName('cases').setDescription('Afficher les caisses actives'),
-  new SlashCommandBuilder().setName('leaderboard').setDescription('Afficher le classement DropForge'),
+  new SlashCommandBuilder().setName('leaderboard').setDescription('Afficher le classement Skinova'),
   new SlashCommandBuilder()
     .setName('battle')
     .setDescription('Créer une battle de caisses')

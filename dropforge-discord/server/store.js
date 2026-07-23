@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +12,17 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function makeFairState(userId = 'player') {
+  const serverSeed = crypto.randomBytes(32).toString('hex');
+  return {
+    clientSeed: `skinova-${String(userId).slice(0, 24)}`,
+    nonce: 0,
+    serverSeed,
+    serverHash: crypto.createHash('sha256').update(serverSeed).digest('hex'),
+    history: [],
+  };
+}
+
 function ensureUser(user) {
   user.balance = Number(user.balance) || 0;
   user.inventory ||= [];
@@ -19,6 +31,12 @@ function ensureUser(user) {
   user.banned = Boolean(user.banned);
   user.admin = Boolean(user.admin);
   user.lastDaily ||= 0;
+  user.fair ||= makeFairState(user.id);
+  user.fair.clientSeed = String(user.fair.clientSeed || `skinova-${String(user.id).slice(0, 24)}`).slice(0, 64);
+  user.fair.nonce = Math.max(0, Number(user.fair.nonce) || 0);
+  if (!user.fair.serverSeed) user.fair.serverSeed = crypto.randomBytes(32).toString('hex');
+  user.fair.serverHash = crypto.createHash('sha256').update(user.fair.serverSeed).digest('hex');
+  user.fair.history = Array.isArray(user.fair.history) ? user.fair.history.slice(0, 100) : [];
   return user;
 }
 
@@ -108,6 +126,11 @@ export function publicUser(user) {
     banned: Boolean(user.banned),
     stats: clone(user.stats || {}),
     inventoryCount: (user.inventory || []).length,
+    fair: user.fair ? {
+      clientSeed: user.fair.clientSeed,
+      nonce: Number(user.fair.nonce) || 0,
+      serverHash: user.fair.serverHash,
+    } : null,
   };
 }
 

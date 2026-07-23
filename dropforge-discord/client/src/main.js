@@ -17,12 +17,15 @@ const state = {
   battles: [],
   leaderboard: [],
   presence: [],
-  active: qs.get('screen') || 'cases',
+  active: qs.get('screen') || 'home',
   selectedCase: null,
   quantity: 1,
   admin: null,
   socket: null,
   discord: null,
+  fair: null,
+  fairData: null,
+  lastProofs: [],
   loading: true,
 };
 
@@ -33,7 +36,7 @@ function esc(value) {
   return String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#039;', '"':'&quot;' }[char]));
 }
 function initials(name) {
-  return String(name || 'DF').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+  return String(name || 'SV').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
 }
 function avatar(user, size = '') {
   if (user?.avatar) return `<span class="avatar ${size}"><img src="${esc(user.avatar)}" alt="${esc(user.username)}"></span>`;
@@ -51,6 +54,57 @@ function api(path, options = {}) {
     return payload;
   });
 }
+function unitFromDigest(digest, offset = 0) {
+  const part = String(digest || '').slice(offset, offset + 13).padEnd(13, '0');
+  return parseInt(part, 16) / 0xFFFFFFFFFFFFF;
+}
+function bytesToHex(buffer) {
+  return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+async function sha256Text(value) {
+  const bytes = new TextEncoder().encode(String(value));
+  return bytesToHex(await crypto.subtle.digest('SHA-256', bytes));
+}
+async function hmacText(secret, message) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode(String(secret)), { name:'HMAC', hash:'SHA-256' }, false, ['sign']);
+  return bytesToHex(await crypto.subtle.sign('HMAC', key, encoder.encode(String(message))));
+}
+function weightedItemFromRoll(caseDef, roll) {
+  const total = caseDef.items.reduce((sum, item) => sum + Math.max(0, Number(item.weight) || 0), 0);
+  let point = Math.max(0, Math.min(0.9999999999999999, Number(roll) || 0)) * total;
+  for (const item of caseDef.items) {
+    point -= Math.max(0, Number(item.weight) || 0);
+    if (point <= 0) return item;
+  }
+  return caseDef.items.at(-1);
+}
+async function verifyProof(proof) {
+  if (!proof) return { valid:false, checks:[], error:'Preuve absente' };
+  const commitment = await sha256Text(proof.serverSeed);
+  const digest = await hmacText(proof.serverSeed, proof.message || `${proof.clientSeed}:${proof.nonce}:${proof.context}`);
+  const roll = unitFromDigest(digest, 0);
+  const wearRoll = unitFromDigest(digest, 13);
+  const stattrakRoll = unitFromDigest(digest, 26);
+  const visualRoll = unitFromDigest(digest, 39);
+  const checks = [
+    ['Engagement SHA-256', commitment === proof.serverHash],
+    ['HMAC-SHA256', digest === proof.digest],
+    ['Roll principal', Math.abs(roll - Number(proof.roll)) < 1e-12],
+    ['Roll état', Math.abs(wearRoll - Number(proof.wearRoll)) < 1e-12],
+    ['Roll StatTrak', Math.abs(stattrakRoll - Number(proof.stattrakRoll)) < 1e-12],
+    ['Position visuelle', Math.abs(visualRoll - Number(proof.visualRoll)) < 1e-12],
+  ];
+  if (proof.context?.startsWith('upgrade:') && Number.isFinite(Number(proof.chance))) {
+    checks.push(['Résultat WIN/LOSE', (roll < Number(proof.chance)) === Boolean(proof.success)]);
+  }
+  const caseId = proof.context?.startsWith('open:') ? proof.context.split(':')[1] : proof.context?.startsWith('battle:') ? state.cases.find((c)=>c.items.some((it)=>it.id===proof.itemId))?.id : null;
+  const caseDef = caseId ? state.cases.find((c)=>c.id===caseId) : state.cases.find((c)=>c.items.some((it)=>it.id===proof.itemId));
+  if (caseDef && proof.itemId) checks.push(['Objet tiré', weightedItemFromRoll(caseDef, roll)?.id === proof.itemId]);
+  return { valid:checks.every(([,ok])=>ok), checks, commitment, digest, roll, wearRoll, stattrakRoll, visualRoll };
+}
+function shortHash(value) { const text=String(value || ''); return text ? `${text.slice(0,12)}…${text.slice(-10)}` : '—'; }
+
 function toast(message, tone = '') {
   const root = document.getElementById('toastRoot');
   const node = document.createElement('div');
@@ -111,6 +165,7 @@ async function reloadUser() {
   state.user = payload.user;
   state.inventory = payload.inventory || [];
   state.history = payload.history || [];
+  state.fair = payload.user?.fair || null;
 }
 async function loadPublic() {
   const [cases, battles, leaderboard] = await Promise.all([
@@ -130,7 +185,7 @@ async function init() {
     render();
     if (state.active === 'admin' && state.user.admin) loadAdmin();
   } catch (error) {
-    document.getElementById('app').innerHTML = `<div class="fatal"><div class="logo-mark">DF</div><h1>Connexion impossible</h1><p>${esc(error.message)}</p><button onclick="location.reload()">Réessayer</button></div>`;
+    document.getElementById('app').innerHTML = `<div class="fatal"><div class="logo-mark">SV</div><h1>Connexion impossible</h1><p>${esc(error.message)}</p><button onclick="location.reload()">Réessayer</button></div>`;
   }
 }
 function connectSocket() {
@@ -142,7 +197,7 @@ function connectSocket() {
   state.socket.on('cases:update', async () => { const p = await api('/cases'); state.cases = p.cases; renderMain(); });
 }
 function renderLoading() {
-  document.getElementById('app').innerHTML = `<div class="loading-screen"><div class="logo-mark pulse">DF</div><strong>DROP<span>FORGE</span></strong><small>Chargement de DropForge V7…</small></div>`;
+  document.getElementById('app').innerHTML = `<div class="loading-screen"><div class="logo-mark pulse">SV</div><strong>SKINOVA</strong><small>Chargement de Skinova V1…</small></div>`;
 }
 
 function navButton(id, icon, label) {
@@ -151,93 +206,134 @@ function navButton(id, icon, label) {
 }
 function render() {
   document.getElementById('app').innerHTML = `
-    <div class="discord-shell v7-shell">
-      <aside class="server-rail">
-        <div class="discord-dot">◖◗</div>
-        <div class="server-icon active">DF</div>
-        <div class="server-icon">+</div>
+    <div class="skinova-app skinova-v1">
+      <aside class="skinova-sidebar">
+        <div class="skinova-brand" data-nav="home">
+          <span class="skinova-emblem"><i></i></span>
+          <div><strong>SKINOVA</strong><small>DISCORD ACTIVITY · V1</small></div>
+        </div>
+        <div class="skinova-user-mini">
+          ${avatar(state.user,'small')}
+          <div><strong>${esc(state.user.username)}</strong><small>Niveau ${Math.max(1,Math.floor((state.user.stats.opens||0)/10)+1)} · ${insideDiscord?'Discord connecté':'Aperçu local'}</small></div>
+          <i class="online-dot"></i>
+        </div>
+        <nav class="skinova-nav">
+          <div class="nav-group-label">NAVIGATION</div>
+          ${navButton('home','⌂','Accueil')}
+          ${navButton('cases','▣','Caisses')}
+          ${navButton('inventory','▦','Inventaire')}
+          ${navButton('battles','⚔','Battles')}
+          ${navButton('upgrade','↗','Améliorateur')}
+          <div class="nav-group-label">COMMUNAUTÉ</div>
+          ${navButton('history','◷','Historique')}
+          ${navButton('leaderboard','♛','Classement')}
+          ${navButton('admin','⌘','Skinova Control')}
+        </nav>
+        <button class="skinova-event-card" data-nav="cases">
+          <span>ÉVÉNEMENT</span><strong>DROP HEAT</strong><b>CAISSES EN FEU</b><small>Découvrir la collection</small><i>→</i>
+        </button>
+        <button class="sidebar-fair" data-action="fair-center"><i>✓</i><div><strong>PROVABLY FAIR</strong><small>${esc(shortHash(state.fair?.serverHash))}</small></div></button>
+        <div class="sidebar-status"><span><i></i> PLATEFORME OPÉRATIONNELLE</span><small>${state.presence.length || 1} joueur(s) actif(s)</small></div>
       </aside>
-      <div class="activity-shell">
-        <header class="topbar">
-          <div class="brand"><span class="logo-mark small">DF</span><strong>DROP<span>FORGE</span></strong><em>DISCORD EDITION · V7</em></div>
-          <div class="channel-pill"><i></i><span># dropforge-vault</span><small>${insideDiscord ? 'Dans Discord' : 'Mode aperçu local'}</small></div>
-          <div class="top-actions">
+      <section class="skinova-workspace">
+        <header class="skinova-topbar">
+          <div class="skinova-breadcrumb"><span>◆</span><div><small>SKINOVA</small><strong id="screenTitle">${state.active==='home'?'Accueil':state.active}</strong></div></div>
+          <div class="skinova-top-actions">
+            <button class="top-fair" data-action="fair-center">✓ ÉQUITABLE & VÉRIFIÉ</button>
             <button class="daily-button" data-action="daily">BONUS DAILY</button>
-            <div class="balance"><small>SOLDE</small><b id="topBalance">${money(state.user.balance)} CR</b></div>
-            <button class="profile-button" data-action="profile-menu">${avatar(state.user, 'small')}<span>${esc(state.user.username)}</span></button>
+            <div class="skinova-balance"><span>◆</span><b id="topBalance">${money(state.user.balance)}</b><small>CR</small></div>
+            <button class="profile-button" data-action="profile-menu">${avatar(state.user,'small')}<span>${esc(state.user.username)}</span><i>⌄</i></button>
           </div>
         </header>
-        <div class="activity-body">
-          <nav class="side-nav">
-            <div class="nav-group-label">JOUER</div>
-            ${navButton('cases','◇','Caisses')}
-            ${navButton('inventory','▦','Inventaire')}
-            ${navButton('battles','⚔','Battles')}
-            ${navButton('upgrade','↗','Upgrade')}
-            <div class="nav-group-label">COMMUNAUTÉ</div>
-            ${navButton('history','◷','Historique')}
-            ${navButton('leaderboard','♛','Classement')}
-            ${navButton('admin','⌘','Admin')}
-            <div class="fair-card"><span>PROVABLY FAIR</span><strong>Simulation locale</strong><small>Crédits fictifs uniquement</small></div>
-          </nav>
-          <main class="main-stage" id="mainStage"></main>
-          <aside class="members-panel">
-            <div class="members-head"><strong>JOUEURS</strong><span id="onlineCount">${state.presence.length || 1} EN LIGNE</span></div>
-            <div id="presenceList"></div>
-            <div class="bot-box"><span>🤖</span><div><strong>Bots de battle</strong><small>Complètent les parties de démonstration</small></div></div>
-          </aside>
-        </div>
-        <nav class="mobile-nav">
-          ${navButton('cases','◇','Caisses')}${navButton('inventory','▦','Inv.')}${navButton('battles','⚔','Battles')}${navButton('upgrade','↗','Upgrade')}${navButton('history','◷','Histo.')}
-        </nav>
-      </div>
+        <main class="skinova-main" id="mainStage"></main>
+        <footer class="skinova-statusbar"><span><i></i> ${state.presence.length || 1} MEMBRE(S) EN LIGNE</span><b>ÉVÉNEMENT · DROP HEAT ACTIF</b><span>SKINOVA V1 · CRÉDITS FICTIFS</span></footer>
+      </section>
+      <nav class="skinova-mobile-nav">
+        ${navButton('home','⌂','Accueil')}${navButton('cases','▣','Caisses')}${navButton('battles','⚔','Battles')}${navButton('upgrade','↗','Upgrade')}${navButton('inventory','▦','Inventaire')}
+      </nav>
     </div>
     <div id="modalRoot"></div><div id="toastRoot"></div>`;
   renderMain();
   renderPresence();
 }
+
 function renderPresence() {
-  const root = document.getElementById('presenceList');
-  if (!root) return;
-  const members = state.presence.length ? state.presence : [state.user, ...state.leaderboard.slice(1, 5)];
-  document.getElementById('onlineCount').textContent = `${members.length} EN LIGNE`;
-  root.innerHTML = members.slice(0, 8).map((u) => `<div class="member-row">${avatar(u,'tiny')}<div><strong>${esc(u.username)}</strong><small>${u.id === state.user.id ? 'Dans cette Activity' : 'En ligne'}</small></div><i></i></div>`).join('');
+  const title = document.getElementById('screenTitle');
+  if (title) {
+    const labels={home:'Accueil',cases:'Caisses',inventory:'Inventaire',battles:'Case Battles',upgrade:'Améliorateur',history:'Historique',leaderboard:'Classement',admin:'Skinova Control'};
+    title.textContent=labels[state.active]||'Skinova';
+  }
 }
+
 function renderMain() {
   const root = document.getElementById('mainStage');
   if (!root) return;
-  const views = { cases: renderCases, inventory: renderInventory, battles: renderBattles, upgrade: renderUpgrade, history: renderHistory, leaderboard: renderLeaderboard, admin: renderAdmin };
-  root.innerHTML = (views[state.active] || renderCases)();
+  const views = { home: renderHome, cases: renderCases, inventory: renderInventory, battles: renderBattles, upgrade: renderUpgrade, history: renderHistory, leaderboard: renderLeaderboard, admin: renderAdmin };
+  root.innerHTML = (views[state.active] || renderHome)();
   root.scrollTop = 0;
+  renderPresence();
+}
+
+function renderHome() {
+  const featured = state.cases.find((c) => c.id === 'ak-legends') || state.cases[0];
+  const reel = featured?.items?.slice().sort((a,b)=>Number(b.value)-Number(a.value)).slice(0,5) || [];
+  const recent = state.history.flatMap((entry)=>entry.items || []).slice(0,4);
+  const fallbackRecent = state.cases.flatMap((c)=>c.items).slice(0,4);
+  const latest = recent.length ? recent : fallbackRecent;
+  const best = state.cases.flatMap((c)=>c.items).slice().sort((a,b)=>Number(b.value)-Number(a.value)).slice(0,3);
+  const openingCount = state.user.stats.opens || 0;
+  return `<section class="skinova-home">
+    <div class="skinova-hero">
+      <div class="hero-embers"></div>
+      <div class="hero-content">
+        <span class="hero-label">PLATEFORME DE CASE OPENING SUR DISCORD</span>
+        <h1>SKI<span>NOVA</span></h1>
+        <h2>OUVRE. GAGNE. <em>DOMINE.</em></h2>
+        <p>Caisses exclusives, skins rares, battles multijoueurs et tirages vérifiables — réunis dans une seule Activity.</p>
+        <div class="hero-features"><span><i>▣</i><b>CAISSES EXCLUSIVES</b></span><span><i>☆</i><b>SKINS RARES</b></span><span><i>♟</i><b>COMMUNAUTÉ ACTIVE</b></span></div>
+        <div class="hero-actions"><button class="skinova-primary" data-open-case="${featured?.id || ''}">OUVRIR LA CAISSE VEDETTE</button><button class="skinova-secondary" data-nav="battles">VOIR LES BATTLES</button></div>
+      </div>
+      <div class="hero-case"><div class="hero-ring"></div><img src="${featured?.image || ''}" alt="${esc(featured?.name || '')}"><span>DROP VEDETTE</span><b>${money(featured?.price || 0)} CR</b></div>
+    </div>
+    <div class="skinova-dashboard">
+      <article class="featured-case-panel">
+        <header><div><span>🔥 CAISSE EXCLUSIVE</span><h3>${esc(featured?.name || '')}</h3></div><small>${featured?.items?.length || 0} GAINS</small></header>
+        <div class="featured-case-art"><img src="${featured?.image || ''}" alt=""><div class="case-aura"></div></div>
+        <div class="featured-price"><span>PRIX</span><b>◆ ${money(featured?.price || 0)} CR</b></div>
+        <button class="skinova-primary wide" data-open-case="${featured?.id || ''}">OUVRIR LA CAISSE <i>→</i></button>
+        <button class="probability-link" data-open-case="${featured?.id || ''}">✓ Voir les probabilités et les gains</button>
+      </article>
+      <article class="opening-showcase">
+        <header><span></span><h3>OUVERTURE EN COURS</h3><span></span></header>
+        <div class="showcase-reel"><i class="showcase-pointer top"></i>${reel.map((it,index)=>`<div class="showcase-item ${index===2?'focus':''}" style="--rarity:${rarityColor[it.rarity]||'#ff5a18'}"><img src="${it.image}" alt=""><small>${esc(it.name)}</small></div>`).join('')}<i class="showcase-pointer bottom"></i></div>
+        <div class="showcase-steps"><span class="done"><b>1</b><small>LANCEMENT</small></span><i></i><span class="active"><b>2</b><small>ROULEMENT</small></span><i></i><span><b>3</b><small>RÉSULTAT</small></span></div>
+        <div class="showcase-stats"><span><small>TES OUVERTURES</small><b>${openingCount}</b></span><span><small>WIN BATTLES</small><b>${state.user.stats.battleWins || 0}</b></span><span><small>OBJETS</small><b>${state.inventory.length}</b></span></div>
+      </article>
+      <aside class="home-right-rail">
+        <section><header><span>🔥</span><h3>DERNIERS DROPS</h3></header>${latest.map((it,index)=>`<div class="feed-item"><img src="${it.image}" alt=""><div><strong>${esc(it.weapon || '')} | ${esc(it.name || '')}</strong><small>${index===0?'à l’instant':`il y a ${index+2} min`}</small></div><b>◆ ${money(it.value)}</b></div>`).join('')}</section>
+        <section><header><span>🏆</span><h3>MEILLEURS GAINS</h3></header>${best.map((it,index)=>`<div class="top-gain"><i>${index+1}</i><img src="${it.image}" alt=""><div><strong>${esc(it.weapon)} | ${esc(it.name)}</strong><small>${esc(it.rarity.toUpperCase())}</small></div><b>◆ ${money(it.value)}</b></div>`).join('')}</section>
+      </aside>
+    </div>
+    <div class="skinova-trustbar"><span><i>✓</i><div><strong>PAIEMENTS FICTIFS</strong><small>Aucune monnaie réelle</small></div></span><span><i>⚡</i><div><strong>ANIMATIONS LIVE</strong><small>Ouvertures et battles</small></div></span><span><i>◇</i><div><strong>ÉQUITABLE & VÉRIFIÉ</strong><small>Système provably fair</small></div></span><span><i>♛</i><div><strong>PLUS TU JOUES</strong><small>Plus tu progresses</small></div></span></div>
+  </section>`;
 }
 
 function renderCases() {
-  const featured = state.cases.find((c) => c.id === 'royal-overdrive') || state.cases[0];
-  const waiting = state.battles.filter((b) => b.status === 'waiting').length;
-  return `<section class="view cases-view v7-cases">
-    <div class="hero-card v7-hero" style="--accent:${featured.accent}">
-      <div class="hero-copy">
-        <div class="hero-kicker"><span></span> DROP ROOM · SAISON 07</div>
-        <h1>Le drop commence<br><em>avant l’ouverture.</em></h1>
-        <p>Caisses premium, battles synchronisées et upgrades à haute tension — directement dans ton serveur Discord.</p>
-        <div class="hero-actions"><button class="cta" data-open-case="${featured.id}">Ouvrir la caisse vedette</button><button class="ghost" data-nav="battles">Voir les battles</button></div>
-        <div class="hero-stats"><span><b>${state.cases.length}</b><small>CAISSES LIVE</small></span><span><b>${waiting}</b><small>BATTLES OUVERTES</small></span><span><b>${state.presence.length || 1}</b><small>JOUEURS EN LIGNE</small></span></div>
-      </div>
-      <div class="hero-visual"><div class="hero-noise"></div><img src="${featured.image}" alt="${esc(featured.name)}"><div class="hero-glow"></div><div class="live-chip"><i></i> DROP VEDETTE</div><div class="hero-case-price"><small>À PARTIR DE</small><b>${money(featured.price)} CR</b></div></div>
-    </div>
-    <div class="drop-strip"><span><i></i> LIVE DROPS</span><div>${state.cases.slice(0,5).map((c)=>`<b>${esc(c.name)}</b><small>${money(c.price)} CR</small>`).join('')}</div></div>
-    <div class="section-heading"><div><span class="eyebrow">CASE COLLECTION</span><h2>Toutes les caisses</h2><p>Choisis un niveau de risque et découvre tous les gains avant de jouer.</p></div><div class="filter-pills"><button class="active">Toutes</button><button>Armes</button><button>Premium</button></div></div>
-    <div class="case-grid">${state.cases.map(caseCard).join('')}</div>
+  return `<section class="skinova-page cases-page">
+    <div class="skinova-page-head"><div><span>COLLECTION SKINOVA</span><h1>Choisis ta caisse</h1><p>Chaque caisse possède son propre univers, ses probabilités et son jackpot.</p></div><div class="page-head-actions"><button class="skinova-secondary active">TOUTES</button><button class="skinova-secondary">ARMES</button><button class="skinova-secondary">PREMIUM</button></div></div>
+    <div class="case-grid skinova-case-grid">${state.cases.map(caseCard).join('')}</div>
   </section>`;
 }
+
 function caseCard(c) {
   const jackpot = Math.max(...c.items.map((i) => Number(i.value)));
-  const roiHint = c.price >= 250 ? 'HIGH ROLLER' : c.price >= 100 ? 'POPULAR' : 'STARTER';
-  return `<article class="case-card v7-case-card" style="--accent:${c.accent}">
-    <div class="case-art"><img src="${c.image}" alt="${esc(c.name)}"><span class="case-live"><i></i>${c.active ? 'LIVE' : 'OFF'}</span><span class="case-tier">${roiHint}</span></div>
-    <div class="case-info"><div class="case-title-row"><div><small>${esc(c.tag)}</small><h3>${esc(c.name)}</h3></div><span class="case-count">${c.items.length}</span></div><div class="case-meta"><span>Jackpot <b>${money(jackpot)} CR</b></span><span>Variants FN → BS</span></div><button data-open-case="${c.id}"><span>OUVRIR</span><b>${money(c.price)} CR</b></button></div>
+  const roiHint = c.price >= 250 ? 'PREMIUM' : c.price >= 100 ? 'POPULAIRE' : 'STARTER';
+  return `<article class="case-card skinova-case-card" style="--accent:${c.accent}">
+    <div class="case-flames"></div><div class="case-art"><img src="${c.image}" alt="${esc(c.name)}"><span class="case-live"><i></i>${c.active ? 'ACTIF' : 'MASQUÉ'}</span><span class="case-tier">${roiHint}</span></div>
+    <div class="case-info"><small>${esc(c.tag)}</small><h3>${esc(c.name)}</h3><div class="case-meta"><span>${c.items.length} GAINS</span><span>JACKPOT ◆ ${money(jackpot)}</span></div><div class="case-price"><span>PRIX</span><b>◆ ${money(c.price)} CR</b></div><button data-open-case="${c.id}">OUVRIR LA CAISSE <i>→</i></button></div>
   </article>`;
 }
+
 function renderInventory() {
   const total = state.inventory.reduce((sum, item) => sum + Number(item.value), 0);
   return `<section class="view"><div class="page-head"><div><span class="eyebrow">LOCKER</span><h1>Ton inventaire</h1><p>Les objets sont liés à ton compte Discord.</p></div><div class="summary-card"><small>VALEUR TOTALE</small><strong>${money(total)} CR</strong><button data-action="sell-all" ${state.inventory.length ? '' : 'disabled'}>Tout revendre à 100 %</button></div></div>
@@ -270,7 +366,7 @@ function replayCard(b) {
 }
 function renderUpgrade() {
   const options = state.inventory.map((item) => `<option value="${item.uid}">${esc(item.weapon)} · ${esc(item.name)} (${item.condition}) — ${money(item.value)} CR</option>`).join('');
-  return `<section class="view upgrade-view-v7"><div class="page-head"><div><span class="eyebrow">UPGRADE LAB</span><h1>Upgrade</h1><p>La zone reste fixe. Seul le cran accélère, ralentit et décide du résultat.</p></div><div class="v7-status-pill"><i></i> MOTEUR PROVABLY FAIR</div></div>
+  return `<section class="view upgrade-view-v7"><div class="page-head"><div><span class="eyebrow">UPGRADE LAB</span><h1>Upgrade</h1><p>La zone reste fixe. Seul le cran accélère, ralentit et décide du résultat.</p></div><button class="v7-status-pill" data-action="fair-center"><i></i> PROVABLY FAIR VÉRIFIABLE</button></div>
     <div class="upgrade-layout v7-upgrade-layout">
       <div class="upgrade-control v7-upgrade-control">
         <div class="control-head"><span>01</span><div><strong>Configure ton risque</strong><small>Plus le multiplicateur monte, plus la zone WIN diminue.</small></div></div>
@@ -282,8 +378,8 @@ function renderUpgrade() {
       <div class="upgrade-wheel-shell v7-dial-shell">
         <div class="dial-head"><span>02</span><div><strong>Lecture du résultat</strong><small>Le cadran ne bouge jamais. Le cran blanc est le seul élément animé.</small></div></div>
         <div class="upgrade-dial-preview" style="--chance:171deg">
-          <div class="dial-scale"></div><div class="dial-zone-label win">WIN</div><div class="dial-zone-label lose">LOSE</div>
-          <div class="dial-needle preview"><i></i></div><div class="dial-hub"><span>DF</span><small>V7</small></div>
+          <div class="dial-scale"></div><div class="dial-zone-label win">WIN 47.5%</div><div class="dial-zone-label lose">LOSE 52.5%</div>
+          <div class="dial-needle preview"><i></i></div><div class="dial-hub"><span>SV</span><small>V1</small></div>
         </div>
         <div class="dial-legend"><span><i class="win-dot"></i> Zone gagnante</span><span><i class="lose-dot"></i> Zone perdante</span></div>
       </div>
@@ -305,27 +401,36 @@ function renderLeaderboard() {
   return `<section class="view"><div class="page-head"><div><span class="eyebrow">SERVER RANKING</span><h1>Classement</h1><p>Les meilleurs soldes fictifs du serveur.</p></div></div><div class="podium">${state.leaderboard.slice(0,3).map((u,i)=>`<div class="podium-user place-${i+1}"><span class="rank">${i+1}</span>${avatar(u,'large')}<strong>${esc(u.username)}</strong><b>${money(u.balance)} CR</b></div>`).join('')}</div><div class="leader-list">${state.leaderboard.map((u,i)=>`<div class="leader-row"><span>${i+1}</span>${avatar(u,'tiny')}<strong>${esc(u.username)}</strong><em>${u.stats.battleWins || 0} battles gagnées</em><b>${money(u.balance)} CR</b></div>`).join('')}</div></section>`;
 }
 function renderAdmin() {
-  if (!state.user.admin) return empty('⌘','Accès administrateur requis','Le panel est lié aux administrateurs configurés pour l’application Discord.');
-  if (!state.admin) return `<section class="view"><div class="page-head"><div><span class="eyebrow">DROPForge CONTROL</span><h1>Panel administrateur</h1><p>Chargement des données centralisées…</p></div></div><div class="admin-loader"></div></section>`;
+  if (!state.user.admin) return empty('⌘','Accès administrateur requis','Ajoute ton identifiant Discord dans ADMIN_USER_IDS puis relance l’Activity.');
+  if (!state.admin) return `<section class="skinova-page"><div class="skinova-page-head"><div><span>SKINOVA CONTROL</span><h1>Panel administrateur</h1><p>Chargement des données centralisées…</p></div></div><div class="admin-loader"></div></section>`;
   const m = state.admin.metrics;
-  return `<section class="view"><div class="page-head"><div><span class="eyebrow">DROPForge CONTROL</span><h1>Panel administrateur</h1><p>Gestion des caisses, joueurs, soldes, battles et journaux.</p></div><button class="danger-button" data-action="admin-reset">Réinitialiser la démo</button></div>
-    <div class="metrics-grid admin-metrics"><div><small>UTILISATEURS</small><strong>${m.users}</strong></div><div><small>CAISSES ACTIVES</small><strong>${m.activeCases}</strong></div><div><small>OBJETS</small><strong>${m.inventoryItems}</strong></div><div><small>BATTLES</small><strong>${m.battles}</strong></div><div><small>CRÉDITS EN CIRCULATION</small><strong>${money(m.credits)}</strong></div></div>
-    <div class="admin-grid"><div class="admin-panel"><div class="panel-head"><div><small>CASE BUILDER</small><h2>Caisses</h2></div><button data-action="admin-new-case">+ Nouvelle</button></div><div class="admin-case-list">${state.admin.cases.map(adminCaseRow).join('')}</div></div>
-    <div class="admin-panel"><div class="panel-head"><div><small>ACCOUNT CONTROL</small><h2>Joueurs</h2></div></div><div class="admin-users">${state.admin.users.map(adminUserRow).join('')}</div></div></div>
-    <div class="admin-grid lower"><div class="admin-panel"><div class="panel-head"><div><small>GAME SETTINGS</small><h2>Réglages</h2></div></div><div class="settings-form"><label>Bonus daily<input id="adminDaily" type="number" value="${state.admin.settings.dailyGift}"></label><label>Ouverture (ms)<input id="adminOpening" type="number" value="${state.admin.settings.openingDurationMs}"></label><label>Upgrade (ms)<input id="adminUpgrade" type="number" value="${state.admin.settings.upgradeDurationMs}"></label><button data-action="admin-save-settings">Enregistrer</button></div></div>
-    <div class="admin-panel"><div class="panel-head"><div><small>AUDIT LOG</small><h2>Dernières actions</h2></div></div><div class="audit-list">${state.admin.audit.slice(0,15).map((a)=>`<div><span>${esc(a.type)}</span><strong>${esc(a.detail)}</strong><small>${new Date(a.at).toLocaleString('fr-FR')}</small></div>`).join('')}</div></div></div>
+  return `<section class="skinova-admin">
+    <header class="admin-hero"><div><span>SKINOVA CONTROL</span><h1>Panel administrateur</h1><p>Gestion complète des caisses, drops, joueurs, probabilités et réglages.</p></div><div class="admin-head-actions"><button class="skinova-secondary" data-action="fair-center">PROVABLY FAIR</button><button class="danger-button" data-action="admin-reset">RÉINITIALISER LA DÉMO</button></div></header>
+    <div class="admin-kpis"><article><i>♟</i><div><small>JOUEURS</small><strong>${m.users}</strong></div></article><article><i>▣</i><div><small>CAISSES ACTIVES</small><strong>${m.activeCases}</strong></div></article><article><i>◇</i><div><small>OBJETS</small><strong>${m.inventoryItems}</strong></div></article><article><i>⚔</i><div><small>BATTLES</small><strong>${m.battles}</strong></div></article><article><i>◆</i><div><small>CRÉDITS EN CIRCULATION</small><strong>${money(m.credits)}</strong></div></article></div>
+    <div class="admin-main-grid">
+      <section class="admin-panel cases-control"><div class="panel-head"><div><small>GESTION DES CAISSES</small><h2>Catalogue</h2></div><button class="skinova-primary" data-action="admin-new-case">+ NOUVELLE CAISSE</button></div><div class="admin-table-head"><span>APERÇU</span><span>NOM</span><span>PRIX</span><span>STATUT</span><span>DROPS</span><span>ACTIONS</span></div><div class="admin-case-list">${state.admin.cases.map(adminCaseRow).join('')}</div></section>
+      <section class="admin-panel fair-admin-card"><div class="panel-head"><div><small>PROVABLY FAIR</small><h2>Engagement actuel</h2></div></div><div class="fair-admin-body"><label>SERVER SEED HASH<code>${esc(state.fair?.serverHash || '—')}</code></label><label>CLIENT SEED<code>${esc(state.fair?.clientSeed || '—')}</code></label><label>NONCE ACTUEL<code>${Number(state.fair?.nonce || 0)}</code></label><button class="skinova-primary wide" data-action="fair-center">VÉRIFIER LES TIRAGES</button></div></section>
+    </div>
+    <div class="admin-main-grid lower-admin">
+      <section class="admin-panel users-control"><div class="panel-head"><div><small>GESTION DES UTILISATEURS</small><h2>Comptes Discord</h2></div></div><div class="admin-users">${state.admin.users.map(adminUserRow).join('')}</div></section>
+      <section class="admin-panel settings-control"><div class="panel-head"><div><small>RÉGLAGES GLOBAUX</small><h2>Animations & bonus</h2></div></div><div class="settings-form"><label>Bonus daily<input id="adminDaily" type="number" value="${state.admin.settings.dailyGift}"></label><label>Ouverture (ms)<input id="adminOpening" type="number" value="${state.admin.settings.openingDurationMs}"></label><label>Upgrade (ms)<input id="adminUpgrade" type="number" value="${state.admin.settings.upgradeDurationMs}"></label><label>Battle / manche (ms)<input id="adminBattle" type="number" value="${state.admin.settings.battleRoundDurationMs || 5600}"></label><button class="skinova-primary wide" data-action="admin-save-settings">ENREGISTRER</button></div></section>
+    </div>
+    <section class="admin-panel audit-control"><div class="panel-head"><div><small>JOURNAL D’AUDIT</small><h2>Dernières actions</h2></div></div><div class="audit-list">${state.admin.audit.slice(0,15).map((a)=>`<div><span>${esc(a.type)}</span><strong>${esc(a.detail)}</strong><small>${new Date(a.at).toLocaleString('fr-FR')}</small></div>`).join('')}</div></section>
   </section>`;
 }
+
 function adminCaseRow(c) {
-  return `<div class="admin-case-row"><img src="${c.image}" alt=""><div><strong>${esc(c.name)}</strong><small>${money(c.price)} CR · ${c.items.length} gains</small></div><button data-admin-toggle-case="${c.id}">${c.active ? 'Masquer' : 'Activer'}</button><button data-admin-edit-case="${c.id}">Gérer</button></div>`;
+  return `<div class="admin-case-row"><img src="${c.image}" alt=""><div class="admin-case-name"><strong>${esc(c.name)}</strong><small>${esc(c.tag || 'SKINOVA CASE')}</small></div><b>◆ ${money(c.price)}</b><span class="status-pill ${c.active?'active':'inactive'}">${c.active?'ACTIF':'INACTIF'}</span><span>${c.items.length} drops</span><div class="admin-row-actions"><button data-admin-toggle-case="${c.id}">${c.active ? 'Masquer' : 'Activer'}</button><button data-admin-edit-case="${c.id}">Gérer</button><button class="danger-mini" data-admin-delete-case="${c.id}">×</button></div></div>`;
 }
+
 function adminUserRow(u) {
-  return `<div class="admin-user-row">${avatar(u,'tiny')}<div><strong>${esc(u.username)}</strong><small>${u.inventoryCount} objets · ${u.admin?'ADMIN':'JOUEUR'}${u.banned?' · BANNI':''}</small></div><input type="number" value="${u.balance}" data-admin-balance="${u.id}"><button data-admin-save-user="${u.id}">Sauver</button><button class="${u.banned?'good-button':'danger-button'}" data-admin-ban="${u.id}">${u.banned?'Réactiver':'Bannir'}</button></div>`;
+  return `<div class="admin-user-row">${avatar(u,'tiny')}<div class="admin-user-name"><input value="${esc(u.username)}" data-admin-username="${u.id}"><small>${u.inventoryCount} objets · ${u.banned?'BANNI':u.admin?'ADMIN':'JOUEUR'}</small></div><label><small>SOLDE</small><input type="number" value="${u.balance}" data-admin-balance="${u.id}"></label><label class="admin-role-check"><input type="checkbox" data-admin-role="${u.id}" ${u.admin?'checked':''}> Admin</label><button data-admin-save-user="${u.id}">Sauver</button><button class="${u.banned?'good-button':'danger-button'}" data-admin-ban="${u.id}">${u.banned?'Réactiver':'Bannir'}</button></div>`;
 }
+
 function empty(icon,title,text) { return `<div class="empty-state"><span>${icon}</span><h3>${title}</h3><p>${text}</p></div>`; }
 
 function profileMenu() {
-  const demoSwitch = state.config.demoMode ? `<div class="profile-menu-section"><small>PROFILS DE DÉMONSTRATION</small><button data-demo-user="demo-nova">NOVA · Joueur</button><button data-demo-user="demo-admin">ForgeMaster · Admin</button></div>` : '';
+  const demoSwitch = state.config.demoMode ? `<div class="profile-menu-section"><small>PROFILS DE DÉMONSTRATION</small><button data-demo-user="demo-nova">NOVA · Joueur</button><button data-demo-user="demo-admin">AdminNova · Admin</button></div>` : '';
   modal(`<div class="profile-sheet"><button class="modal-close" data-close-modal>×</button>${avatar(state.user,'large')}<h2>${esc(state.user.username)}</h2><p>${money(state.user.balance)} crédits fictifs</p><div class="profile-stats"><span><b>${state.user.stats.opens || 0}</b> ouvertures</span><span><b>${state.user.stats.battleWins || 0}</b> battles gagnées</span><span><b>${state.inventory.length}</b> objets</span></div>${demoSwitch}<button class="ghost wide" data-close-modal>Fermer</button></div>`, 'profile-modal');
 }
 function caseModal(caseDef) {
@@ -334,52 +439,107 @@ function caseModal(caseDef) {
   modal(`<div class="case-modal v7-case-modal" style="--accent:${caseDef.accent}"><button class="modal-close" data-close-modal>×</button><div class="case-modal-head"><img src="${caseDef.image}" alt=""><div><span>${esc(caseDef.tag)}</span><h2>${esc(caseDef.name)}</h2><p>${caseDef.items.length} gains · jackpot ${money(Math.max(...caseDef.items.map(i=>i.value)))} CR</p></div></div><div class="modal-section-label"><span>QUANTITÉ</span><small>Une roulette indépendante par caisse</small></div><div class="qty-buttons">${[1,3,5,10].map(q=>`<button class="${q===1?'active':''}" data-qty="${q}">x${q}</button>`).join('')}</div><div class="modal-section-label"><span>CONTENU DE LA CAISSE</span><small>Valeurs de base avant état et StatTrak</small></div><div class="case-contents">${caseDef.items.slice().sort((a,b)=>b.value-a.value).map((it)=>`<div style="--r:${rarityColor[it.rarity]}"><img src="${it.image}" alt=""><span>${esc(it.weapon)} · ${esc(it.name)}</span><b>${money(it.value)} CR</b></div>`).join('')}</div><button class="cta wide open-case-button" data-action="confirm-open">Ouvrir x1 · ${money(caseDef.price)} CR</button></div>`, 'case-modal-wrap');
 }
 function openingModal(caseDef, result) {
+  state.lastProofs = result.proofs || [];
+  const winnerIndex = 22;
   const rows = result.items.map((winner,index) => {
-    const reel = Array.from({length:26},(_,i)=>i===22?winner:caseDef.items[Math.floor(Math.random()*caseDef.items.length)]);
+    const reel = Array.from({length:27},(_,i)=>i===winnerIndex?winner:caseDef.items[Math.floor(Math.random()*caseDef.items.length)]);
     return `<div class="reel-line" data-reel-line="${index}"><span class="reel-label">CAISSE ${index+1}</span><div class="reel-window"><div class="reel-pointer"></div><div class="reel-track">${reel.map((it)=>`<div class="reel-item" style="--r:${rarityColor[it.rarity] || '#999'}"><img src="${it.image}" alt=""><strong>${esc(it.name)}</strong><small>${money(it.value)} CR</small></div>`).join('')}</div></div><div class="line-result"></div></div>`;
   }).join('');
-  modal(`<div class="opening-modal v7-opening-modal" style="--accent:${caseDef.accent}"><div class="opening-title"><span>DROP SESSION · x${result.items.length}</span><h2>${esc(caseDef.name)}</h2><p>Chaque ligne tourne indépendamment et conserve son reveal.</p></div><div class="multi-reels">${rows}</div><div class="opening-summary hidden" id="openingSummary"><div><small>COÛT</small><b>${money(result.cost)} CR</b></div><div><small>VALEUR</small><b>${money(result.total)} CR</b></div><div><small>RÉSULTAT</small><b class="${result.profit>=0?'good':'bad'}">${result.profit>=0?'+':''}${money(result.profit)} CR</b></div><button class="cta" data-close-modal>Continuer</button></div></div>`, 'opening-wrap');
+  modal(`<div class="opening-modal v7-opening-modal" style="--accent:${caseDef.accent}"><div class="opening-title"><span>DROP SESSION · x${result.items.length}</span><h2>${esc(caseDef.name)}</h2><p>Le pointeur peut s’arrêter n’importe où dans la carte gagnante.</p></div><div class="multi-reels">${rows}</div><div class="opening-summary hidden" id="openingSummary"><div><small>COÛT</small><b>${money(result.cost)} CR</b></div><div><small>VALEUR</small><b>${money(result.total)} CR</b></div><div><small>RÉSULTAT</small><b class="${result.profit>=0?'good':'bad'}">${result.profit>=0?'+':''}${money(result.profit)} CR</b></div><button class="ghost" data-action="verify-last-proof" data-proof-index="0">Vérifier</button><button class="cta" data-close-modal>Continuer</button></div></div>`, 'opening-wrap');
   requestAnimationFrame(() => requestAnimationFrame(() => {
     const lines = [...document.querySelectorAll('[data-reel-line]')];
+    const duration = 5400;
     lines.forEach((line,index) => {
       const track = line.querySelector('.reel-track');
-      const distance = -(22 * 142 - Math.max(260,line.querySelector('.reel-window').clientWidth)/2 + 64);
-      track.style.transition = `transform ${4.4 + index*0.08}s cubic-bezier(.08,.76,.08,1)`;
+      const windowEl = line.querySelector('.reel-window');
+      const card = track.children[winnerIndex];
+      const visualRoll = Number(result.proofs?.[index]?.visualRoll ?? Math.random());
+      const landingRatio = 0.02 + Math.max(0, Math.min(1, visualRoll)) * 0.96;
+      const targetPoint = card.offsetLeft + card.offsetWidth * landingRatio;
+      const distance = windowEl.clientWidth / 2 - targetPoint;
+      track.style.transition = `transform ${duration + index*90}ms cubic-bezier(.055,.79,.055,1)`;
       track.style.transform = `translateX(${distance}px)`;
       setTimeout(() => {
         const item = result.items[index];
         const positive = item.value > caseDef.price;
         line.classList.add('revealed', positive ? 'positive' : 'negative');
-        line.querySelector('.line-result').innerHTML = `<span>${positive?'WIN':'LOSE'}</span><strong>${esc(item.stattrak?'StatTrak™ ':'')}${esc(item.weapon)} · ${esc(item.name)} (${esc(item.condition)})</strong><b>${money(item.value)} CR</b>`;
-      }, 4500 + index*80);
+        line.querySelector('.line-result').innerHTML = `<span>${positive?'WIN':'LOSE'}</span><strong>${esc(item.stattrak?'StatTrak™ ':'')}${esc(item.weapon)} · ${esc(item.name)} (${esc(item.condition)})</strong><b>${money(item.value)} CR</b><button data-action="verify-last-proof" data-proof-index="${index}" title="Vérifier la preuve">✓</button>`;
+        line.querySelectorAll('button').forEach((button)=>button.addEventListener('click',(event)=>{event.preventDefault();event.stopPropagation();handleClick(event);}));
+      }, duration + index*90 + 80);
     });
-    setTimeout(() => document.getElementById('openingSummary')?.classList.remove('hidden'), 4750 + lines.length*80);
+    setTimeout(() => document.getElementById('openingSummary')?.classList.remove('hidden'), duration + lines.length*90 + 360);
   }));
 }
+
 function newBattleModal() {
   modal(`<div class="form-modal"><button class="modal-close" data-close-modal>×</button><span class="eyebrow">NEW LOBBY</span><h2>Créer une battle</h2><label>Caisse<select id="newBattleCase">${state.cases.map(c=>`<option value="${c.id}">${esc(c.name)} · ${money(c.price)} CR</option>`).join('')}</select></label><label>Manches<select id="newBattleRounds"><option value="1">1 manche</option><option value="3" selected>3 manches</option><option value="5">5 manches</option></select></label><label>Joueurs<select id="newBattleSlots"><option value="2">2 joueurs</option><option value="3">3 joueurs</option><option value="4" selected>4 joueurs</option></select></label><button class="cta wide" data-action="create-battle">Créer le lobby</button></div>`);
 }
 function battleResultModal(battle) {
   if (!battle.result) return;
   const c = state.cases.find(x=>x.id===battle.caseId);
-  const players = battle.players.map((p)=>`<div class="battle-column ${battle.result.winnerIds.includes(p.id)?'winner':''}" data-player="${p.id}"><div class="battle-user">${avatar(p,'small')}<strong>${esc(p.username)}</strong><b>0.00 CR</b></div><div class="battle-drops"></div></div>`).join('');
-  modal(`<div class="battle-modal"><div class="battle-modal-head"><span>LIVE BATTLE REPLAY</span><h2>${esc(c?.name || battle.caseId)}</h2><p>${battle.rounds} manches · pot ${money(battle.result.pot)} CR</p></div><div class="battle-columns">${players}</div><div class="battle-final hidden" id="battleFinal"><strong>Battle terminée</strong><button class="cta" data-close-modal>Continuer</button></div></div>`, 'battle-modal-wrap');
+  state.lastProofs = battle.result.rounds.flatMap((round)=>round.drops.map((drop)=>drop.proof).filter(Boolean));
+  const players = battle.players.map((p)=>`<div class="battle-column" data-player="${p.id}"><div class="battle-user">${avatar(p,'small')}<strong>${esc(p.username)}</strong><b>0.00 CR</b></div><div class="battle-spin-window"><div class="battle-spin-track"></div><div class="battle-spin-pointer"></div></div><div class="battle-drops"></div></div>`).join('');
+  modal(`<div class="battle-modal v71-battle-modal"><div class="battle-modal-head"><span>LIVE CASE BATTLE</span><h2>${esc(c?.name || battle.caseId)}</h2><p id="battleRoundLabel">Préparation · ${battle.rounds} manches · pot ${money(battle.result.pot)} CR</p></div><div class="battle-columns">${players}</div><div class="battle-final hidden" id="battleFinal"><strong>Battle terminée</strong><button class="ghost" data-action="verify-last-proof" data-proof-index="0">Vérifier un tirage</button><button class="cta" data-close-modal>Continuer</button></div></div>`, 'battle-modal-wrap');
   const totals = Object.fromEntries(battle.players.map(p=>[p.id,0]));
-  battle.result.rounds.forEach((round,rIndex)=>setTimeout(()=>{
-    round.drops.forEach(({playerId,item})=>{
-      totals[playerId]+=item.value;
+  const roundDuration = Math.max(3200, Number(battle.result.roundDurationMs) || 5600);
+  const winnerIndex = 16;
+  function runRound(roundIndex) {
+    if (roundIndex >= battle.result.rounds.length) {
+      battle.players.forEach((player)=>{
+        const col=document.querySelector(`[data-player="${CSS.escape(player.id)}"]`);
+        if(col && battle.result.winnerIds.includes(player.id)) col.classList.add('winner');
+      });
+      const label=document.getElementById('battleRoundLabel');
+      if(label) label.textContent=`Terminé · pot ${money(battle.result.pot)} CR`;
+      document.getElementById('battleFinal')?.classList.remove('hidden');
+      return;
+    }
+    const round = battle.result.rounds[roundIndex];
+    const label=document.getElementById('battleRoundLabel');
+    if(label) label.textContent=`MANCHE ${roundIndex+1}/${battle.result.rounds.length} · ouverture en cours`;
+    round.drops.forEach(({playerId,item,proof})=>{
       const col=document.querySelector(`[data-player="${CSS.escape(playerId)}"]`);
       if(!col)return;
-      col.querySelector('.battle-drops').insertAdjacentHTML('beforeend',`<div class="battle-drop" style="--r:${rarityColor[item.rarity]}"><img src="${item.image}" alt=""><div><strong>${esc(item.name)}</strong><small>${esc(item.condition)}${item.stattrak?' · ST™':''}</small></div><b>${money(item.value)}</b></div>`);
-      col.querySelector('.battle-user b').textContent=`${money(totals[playerId])} CR`;
+      const track=col.querySelector('.battle-spin-track');
+      const windowEl=col.querySelector('.battle-spin-window');
+      const reel=Array.from({length:20},(_,i)=>i===winnerIndex?item:c.items[Math.floor(Math.random()*c.items.length)]);
+      track.style.transition='none';
+      track.style.transform='translateX(0)';
+      track.innerHTML=reel.map((it)=>`<div class="battle-spin-item" style="--r:${rarityColor[it.rarity] || '#999'}"><img src="${it.image}" alt=""><small>${esc(it.name)}</small></div>`).join('');
+      void track.offsetWidth;
+      const card=track.children[winnerIndex];
+      const landingRatio=.03+Math.max(0,Math.min(1,Number(proof?.visualRoll ?? Math.random())))*.94;
+      const distance=windowEl.clientWidth/2-(card.offsetLeft+card.offsetWidth*landingRatio);
+      track.style.transition=`transform ${roundDuration}ms cubic-bezier(.055,.8,.055,1)`;
+      track.style.transform=`translateX(${distance}px)`;
     });
-  },700+rIndex*1000));
-  setTimeout(()=>document.getElementById('battleFinal')?.classList.remove('hidden'),900+battle.result.rounds.length*1000);
+    setTimeout(()=>{
+      round.drops.forEach(({playerId,item,proof})=>{
+        totals[playerId]+=item.value;
+        const col=document.querySelector(`[data-player="${CSS.escape(playerId)}"]`);
+        if(!col)return;
+        col.classList.add('round-reveal');
+        col.querySelector('.battle-drops').insertAdjacentHTML('beforeend',`<div class="battle-drop" style="--r:${rarityColor[item.rarity]}"><img src="${item.image}" alt=""><div><strong>${esc(item.name)}</strong><small>${esc(item.condition)}${item.stattrak?' · ST™':''}</small></div><b>${money(item.value)}</b></div>`);
+        col.querySelector('.battle-user b').textContent=`${money(totals[playerId])} CR`;
+        setTimeout(()=>col.classList.remove('round-reveal'),500);
+      });
+      if(label) label.textContent=`MANCHE ${roundIndex+1}/${battle.result.rounds.length} · gains révélés`;
+      setTimeout(()=>runRound(roundIndex+1),1100);
+    },roundDuration+100);
+  }
+  setTimeout(()=>runRound(0),700);
 }
+
 function adminCaseModal(c = null) {
-  const base = c || { name:'NOUVELLE CAISSE', price:50, accent:'#ff3d8d', image:'/assets/cases/budget-frenzy.webp', tag:'CUSTOM', active:true, items:[] };
-  modal(`<div class="form-modal admin-case-modal"><button class="modal-close" data-close-modal>×</button><span class="eyebrow">CASE BUILDER</span><h2>${c?'Modifier':'Créer'} une caisse</h2><label>Nom<input id="caseName" value="${esc(base.name)}"></label><div class="form-row"><label>Prix<input id="casePrice" type="number" value="${base.price}"></label><label>Couleur<input id="caseAccent" type="color" value="${esc(base.accent)}"></label></div><label>Tag<input id="caseTag" value="${esc(base.tag)}"></label><label>URL de l’image<input id="caseImage" value="${esc(base.image)}"></label><label class="check"><input id="caseActive" type="checkbox" ${base.active?'checked':''}> Caisse visible</label><div class="drop-json-note">Les drops existants sont conservés lors d’une modification. Une nouvelle caisse reçoit un pack de gains de démonstration.</div><button class="cta wide" data-admin-submit-case="${c?.id || ''}">Enregistrer</button></div>`);
+  const base = c || { name:'NOUVELLE CAISSE', price:50, accent:'#ff5a18', image:'/assets/cases/budget-frenzy.webp', tag:'SKINOVA ORIGINAL', active:true, items:[] };
+  const drops = (base.items || []).map((item)=>`<div class="case-drop-editor-row" style="--r:${rarityColor[item.rarity]||'#999'}"><img src="${item.image}" alt=""><div><strong>${esc(item.weapon)} | ${esc(item.name)}</strong><small>${esc(item.rarity)} · ◆ ${money(item.value)} · poids ${item.weight}</small></div><button data-admin-drop-edit="${base.id || ''}" data-drop-id="${item.id}">Éditer</button><button class="danger-mini" data-admin-drop-delete="${base.id || ''}" data-drop-id="${item.id}">×</button></div>`).join('');
+  modal(`<div class="form-modal admin-case-modal skinova-form-modal"><button class="modal-close" data-close-modal>×</button><span class="eyebrow">SKINOVA CASE BUILDER</span><h2>${c?'Modifier':'Créer'} une caisse</h2><div class="case-editor-layout"><div class="case-editor-fields"><label>Nom<input id="caseName" value="${esc(base.name)}"></label><div class="form-row"><label>Prix<input id="casePrice" type="number" value="${base.price}"></label><label>Couleur<input id="caseAccent" type="color" value="${esc(base.accent)}"></label></div><label>Tag<input id="caseTag" value="${esc(base.tag)}"></label><label>URL de l’image<input id="caseImage" value="${esc(base.image)}"></label><label class="check"><input id="caseActive" type="checkbox" ${base.active?'checked':''}> Caisse visible</label><button class="skinova-primary wide" data-admin-submit-case="${c?.id || ''}">ENREGISTRER LA CAISSE</button></div><div class="case-editor-preview"><img src="${base.image}" alt=""><strong>${esc(base.name)}</strong><b>◆ ${money(base.price)} CR</b></div></div>${c?`<div class="case-drops-editor"><div class="panel-head"><div><small>CONTENU DE LA CAISSE</small><h3>${base.items.length} drops configurés</h3></div><button class="skinova-secondary" data-admin-drop-add="${base.id}">+ AJOUTER UN DROP</button></div>${drops || '<p class="muted">Aucun drop.</p>'}</div>`:'<div class="drop-json-note">Enregistre d’abord la caisse, puis ouvre-la à nouveau pour gérer ses drops.</div>'}</div>`,'admin-case-wrap');
 }
+function adminDropModal(caseId, drop = null) {
+  const base=drop || {id:'',weapon:'AK-47',name:'Nouveau skin',value:50,weight:10,rarity:'restricted',image:'/assets/weapons/ak.webp',wear:{FN:8,MW:18,FT:42,WW:20,BS:12},stattrak:10};
+  modal(`<div class="form-modal skinova-form-modal drop-editor-modal"><button class="modal-close" data-close-modal>×</button><span class="eyebrow">DROP EDITOR</span><h2>${drop?'Modifier':'Ajouter'} un gain</h2><div class="drop-editor-grid"><label>Arme<input id="dropWeapon" value="${esc(base.weapon)}"></label><label>Nom du skin<input id="dropName" value="${esc(base.name)}"></label><label>Valeur<input id="dropValue" type="number" step="0.01" value="${base.value}"></label><label>Poids de drop<input id="dropWeight" type="number" step="0.001" value="${base.weight}"></label><label>Rareté<select id="dropRarity">${['consumer','industrial','mil-spec','restricted','classified','covert','gold'].map((r)=>`<option value="${r}" ${base.rarity===r?'selected':''}>${r}</option>`).join('')}</select></label><label>Image<input id="dropImage" value="${esc(base.image)}"></label></div><div class="wear-editor"><strong>TAUX D’USURE (%)</strong>${['FN','MW','FT','WW','BS'].map((w)=>`<label>${w}<input id="dropWear${w}" type="number" step="0.1" value="${Number(base.wear?.[w] || 0)}"></label>`).join('')}<label>StatTrak<input id="dropStatTrak" type="number" step="0.1" value="${Number(base.stattrak || 0)}"></label></div><button class="skinova-primary wide" data-admin-submit-drop="${caseId}" data-drop-id="${base.id || ''}">ENREGISTRER LE DROP</button></div>`,'drop-editor-wrap');
+}
+
 
 async function loadAdmin() {
   try { state.admin = await api('/admin/overview'); renderMain(); }
@@ -413,6 +573,13 @@ async function handleClick(event) {
   }
   const action = event.target.closest('[data-action]')?.dataset.action;
   if (action === 'profile-menu') { profileMenu(); return; }
+  if (action === 'fair-center') { await fairCenterModal(); return; }
+  if (action === 'save-client-seed') {
+    try { const value=document.getElementById('fairClientSeed')?.value || ''; await api('/fair/client-seed',{method:'PATCH',body:{clientSeed:value}}); toast('Client seed enregistré','good'); await reloadUser(); await fairCenterModal(); } catch(error){ toast(error.message,'bad'); }
+    return;
+  }
+  if (action === 'verify-last-proof') { const index=Number(event.target.closest('[data-proof-index]')?.dataset.proofIndex || 0); await proofModal(state.lastProofs[index]); return; }
+  if (action === 'verify-fair-history') { const index=Number(event.target.closest('[data-proof-index]')?.dataset.proofIndex || 0); await proofModal(state.fairData?.history?.[index]); return; }
   if (action === 'daily') {
     try { const r=await api('/daily',{method:'POST'}); toast(`+${r.amount} CR reçus`,'good'); await refreshAll(); } catch(e){toast(e.message,'bad');} return;
   }
@@ -431,7 +598,7 @@ async function handleClick(event) {
   }
   if (action === 'admin-new-case') { adminCaseModal(); return; }
   if (action === 'admin-save-settings') {
-    try{await api('/admin/settings',{method:'PATCH',body:{dailyGift:Number(document.getElementById('adminDaily').value),openingDurationMs:Number(document.getElementById('adminOpening').value),upgradeDurationMs:Number(document.getElementById('adminUpgrade').value)}});toast('Réglages enregistrés','good');await loadAdmin();}catch(e){toast(e.message,'bad');}return;
+    try{await api('/admin/settings',{method:'PATCH',body:{dailyGift:Number(document.getElementById('adminDaily').value),openingDurationMs:Number(document.getElementById('adminOpening').value),upgradeDurationMs:Number(document.getElementById('adminUpgrade').value),battleRoundDurationMs:Number(document.getElementById('adminBattle').value)}});toast('Réglages enregistrés','good');await loadAdmin();}catch(e){toast(e.message,'bad');}return;
   }
   if (action === 'admin-reset') {
     if(!confirm('Réinitialiser toutes les données de démonstration ?'))return;
@@ -459,45 +626,78 @@ async function handleClick(event) {
     if(!existing)body.items=state.cases[3]?.items || [];
     try{await api(id?`/admin/cases/${id}`:'/admin/cases',{method:id?'PUT':'POST',body});closeModal();toast('Caisse enregistrée','good');await loadAdmin();await loadPublic();renderMain();}catch(e){toast(e.message,'bad');}return;
   }
+  const deleteCase=event.target.closest('[data-admin-delete-case]');
+  if(deleteCase){const id=deleteCase.dataset.adminDeleteCase;if(!confirm('Supprimer définitivement cette caisse ?'))return;try{await api(`/admin/cases/${id}`,{method:'DELETE'});toast('Caisse supprimée','good');await loadAdmin();await loadPublic();renderMain();}catch(e){toast(e.message,'bad');}return;}
+  const addDrop=event.target.closest('[data-admin-drop-add]');
+  if(addDrop){adminDropModal(addDrop.dataset.adminDropAdd);return;}
+  const editDrop=event.target.closest('[data-admin-drop-edit]');
+  if(editDrop){const c=state.admin.cases.find(x=>x.id===editDrop.dataset.adminDropEdit);const drop=c?.items.find(x=>x.id===editDrop.dataset.dropId);if(c&&drop)adminDropModal(c.id,drop);return;}
+  const deleteDrop=event.target.closest('[data-admin-drop-delete]');
+  if(deleteDrop){const c=state.admin.cases.find(x=>x.id===deleteDrop.dataset.adminDropDelete);if(!c)return;if(!confirm('Supprimer ce drop de la caisse ?'))return;const body={...c,items:c.items.filter(x=>x.id!==deleteDrop.dataset.dropId)};try{await api(`/admin/cases/${c.id}`,{method:'PUT',body});toast('Drop supprimé','good');closeModal();await loadAdmin();await loadPublic();renderMain();}catch(e){toast(e.message,'bad');}return;}
+  const submitDrop=event.target.closest('[data-admin-submit-drop]');
+  if(submitDrop){const caseId=submitDrop.dataset.adminSubmitDrop;const c=state.admin.cases.find(x=>x.id===caseId);if(!c)return;const id=submitDrop.dataset.dropId || `drop-${Date.now().toString(36)}`;const item={id,weapon:document.getElementById('dropWeapon').value,name:document.getElementById('dropName').value,value:Number(document.getElementById('dropValue').value),weight:Number(document.getElementById('dropWeight').value),rarity:document.getElementById('dropRarity').value,image:document.getElementById('dropImage').value,wear:{FN:Number(document.getElementById('dropWearFN').value),MW:Number(document.getElementById('dropWearMW').value),FT:Number(document.getElementById('dropWearFT').value),WW:Number(document.getElementById('dropWearWW').value),BS:Number(document.getElementById('dropWearBS').value)},stattrak:Number(document.getElementById('dropStatTrak').value)};const items=c.items.some(x=>x.id===id)?c.items.map(x=>x.id===id?item:x):[...c.items,item];try{await api(`/admin/cases/${c.id}`,{method:'PUT',body:{...c,items}});toast('Drop enregistré','good');closeModal();await loadAdmin();await loadPublic();renderMain();}catch(e){toast(e.message,'bad');}return;}
   const saveUser=event.target.closest('[data-admin-save-user]');
-  if(saveUser){const id=saveUser.dataset.adminSaveUser;const input=document.querySelector(`[data-admin-balance="${CSS.escape(id)}"]`);try{await api(`/admin/users/${id}`,{method:'PATCH',body:{balance:Number(input.value)}});toast('Solde enregistré','good');await loadAdmin();}catch(e){toast(e.message,'bad');}return;}
+  if(saveUser){const id=saveUser.dataset.adminSaveUser;const input=document.querySelector(`[data-admin-balance="${CSS.escape(id)}"]`);const username=document.querySelector(`[data-admin-username="${CSS.escape(id)}"]`);const role=document.querySelector(`[data-admin-role="${CSS.escape(id)}"]`);try{await api(`/admin/users/${id}`,{method:'PATCH',body:{balance:Number(input.value),username:username?.value||'',admin:!!role?.checked}});toast('Solde enregistré','good');await loadAdmin();}catch(e){toast(e.message,'bad');}return;}
   const ban=event.target.closest('[data-admin-ban]');
   if(ban){const u=state.admin.users.find(x=>x.id===ban.dataset.adminBan);try{await api(`/admin/users/${u.id}`,{method:'PATCH',body:{banned:!u.banned}});toast('Compte mis à jour','good');await loadAdmin();}catch(e){toast(e.message,'bad');}return;}
 }
 function showUpgradeResult(result,multiplier){
   const chance=Math.max(1,Math.min(95,Number(result.chance)||0));
   const chanceDeg=chance*3.6;
-  const duration=9800;
-  const successTarget=Math.max(5,chanceDeg*0.58);
-  const failTarget=chanceDeg+Math.max(12,(360-chanceDeg)*0.55);
-  const landing=result.success?successTarget:Math.min(356,failTarget);
-  const finalRotation=1800+landing;
-  modal(`<div class="upgrade-result-modal v7-upgrade-result" style="--chance:${chanceDeg}deg;--duration:${duration}ms"><div class="result-topline"><span>UPGRADE x${multiplier}</span><b>${chance.toFixed(1)}% DE CHANCE</b></div><h2 id="upgradeStatus">Le cran est lancé</h2><p>Le cadran reste fixe pendant toute l’animation.</p><div class="result-dial"><div class="dial-scale"></div><div class="dial-zone-label win">WIN</div><div class="dial-zone-label lose">LOSE</div><div class="result-needle" id="resultNeedle"><i></i></div><div class="dial-hub"><span>DF</span><small>LIVE</small></div><div class="dial-scan"></div></div><div class="result-progress"><i></i></div><div class="upgrade-reveal hidden" id="upgradeReveal"></div></div>`,'upgrade-result-wrap');
+  const duration=10800;
+  const landing=Math.max(0,Math.min(359.999999,Number(result.proof?.roll ?? (result.success?chance/200:(chance/100+(1-chance/100)/2)))*360));
+  const finalRotation=15*360+landing;
+  state.lastProofs = result.proof ? [result.proof] : [];
+  modal(`<div class="upgrade-result-modal v7-upgrade-result" style="--chance:${chanceDeg}deg;--duration:${duration}ms"><div class="result-topline"><span>UPGRADE x${multiplier}</span><b>${chance.toFixed(1)}% DE CHANCE</b></div><h2 id="upgradeStatus">Le cran est lancé</h2><p>Orange = WIN. Gris = LOSE. La position finale vient du tirage vérifiable.</p><div class="result-dial"><div class="dial-scale"></div><div class="dial-zone-label win">WIN ${chance.toFixed(1)}%</div><div class="dial-zone-label lose">LOSE ${(100-chance).toFixed(1)}%</div><div class="result-needle" id="resultNeedle"><i></i></div><div class="dial-hub"><span>SV</span><small>FAIR</small></div><div class="dial-scan"></div></div><div class="result-progress"><i></i></div><div class="upgrade-proof-mini">ROLL <b>${Number(result.proof?.roll || 0).toFixed(8)}</b> · ARRÊT <b>${landing.toFixed(2)}°</b></div><div class="upgrade-reveal hidden" id="upgradeReveal"></div></div>`,'upgrade-result-wrap');
   const needle=document.getElementById('resultNeedle');
   const status=document.getElementById('upgradeStatus');
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     needle.style.transform=`rotate(${finalRotation}deg)`;
     document.querySelector('.v7-upgrade-result')?.classList.add('running');
   }));
-  setTimeout(()=>{if(status)status.textContent='Dernier ralentissement…';},duration-2600);
+  setTimeout(()=>{if(status)status.textContent='Dernier ralentissement…';},duration-2300);
   setTimeout(()=>{
     const root=document.getElementById('upgradeReveal');
     const modalRoot=document.querySelector('.v7-upgrade-result');
     if(!root)return;
     modalRoot?.classList.add(result.success?'is-win':'is-lose');
-    if(status)status.textContent=result.success?'WIN · Upgrade réussi':'LOSE · Objet perdu';
+    if(status)status.textContent=result.success?'WIN · Le cran est dans l’orange':'LOSE · Le cran est dans le gris';
     root.classList.remove('hidden');
     root.classList.add(result.success?'good':'bad');
-    root.innerHTML=result.success?`<strong>GAIN CONFIRMÉ</strong>${itemCard(result.result,true)}<button class="cta" data-close-modal>Continuer</button>`:`<strong>UPGRADE MANQUÉ</strong><p>${esc(result.source.weapon)} · ${esc(result.source.name)}</p><button class="ghost" data-close-modal>Continuer</button>`;
-    root.querySelectorAll('[data-close-modal]').forEach((button)=>button.addEventListener('click',(event)=>{event.preventDefault();closeModal();}));
+    root.innerHTML=result.success?`<strong>GAIN CONFIRMÉ</strong>${itemCard(result.result,true)}<div class="reveal-actions"><button class="ghost" data-action="verify-last-proof" data-proof-index="0">Vérifier le tirage</button><button class="cta" data-close-modal>Continuer</button></div>`:`<strong>UPGRADE MANQUÉ</strong><p>${esc(result.source.weapon)} · ${esc(result.source.name)}</p><div class="reveal-actions"><button class="ghost" data-action="verify-last-proof" data-proof-index="0">Vérifier le tirage</button><button class="cta" data-close-modal>Continuer</button></div>`;
+    root.querySelectorAll('button').forEach((button)=>button.addEventListener('click',(event)=>{event.preventDefault();event.stopPropagation();handleClick(event);}));
   },duration+180);
 }
+
+
+async function fairCenterModal(){
+  try {
+    state.fairData = await api('/fair');
+    const rows=(state.fairData.history||[]).slice(0,12).map((proof,index)=>`<div class="fair-proof-row"><span>${proof.context?.startsWith('upgrade:')?'UPGRADE':proof.context?.startsWith('battle:')?'BATTLE':'OPEN'}</span><div><strong>#${proof.nonce} · ${esc(proof.context)}</strong><small>${shortHash(proof.digest)}</small></div><button data-action="verify-fair-history" data-proof-index="${index}">Vérifier</button></div>`).join('');
+    modal(`<div class="form-modal fair-center-modal"><button class="modal-close" data-close-modal>×</button><span class="eyebrow">PROVABLY FAIR</span><h2>Centre de vérification</h2><p>Le hash du serveur est publié avant le prochain tirage. Le seed est révélé après le résultat et vérifiable localement en HMAC-SHA256.</p><div class="fair-commitment"><small>PROCHAIN SERVER HASH</small><code>${esc(state.fairData.serverHash)}</code><small>NONCE ${state.fairData.nonce}</small></div><label>Client seed<input id="fairClientSeed" value="${esc(state.fairData.clientSeed)}" maxlength="64"></label><button class="ghost wide" data-action="save-client-seed">Enregistrer le client seed</button><div class="fair-proof-list">${rows || '<small>Aucun tirage révélé pour le moment.</small>'}</div></div>`,'fair-center-wrap');
+  } catch(error){toast(error.message,'bad');}
+}
+async function proofModal(proof){
+  if(!proof){toast('Preuve introuvable','bad');return;}
+  modal(`<div class="form-modal proof-modal"><button class="modal-close" data-close-modal>×</button><span class="eyebrow">VÉRIFICATION LOCALE</span><h2>Analyse de la preuve</h2><div class="proof-loading">Calcul HMAC-SHA256 en cours…</div></div>`,'proof-wrap');
+  try{
+    const verified=await verifyProof(proof);
+    const root=document.querySelector('.proof-modal');
+    if(!root)return;
+    root.innerHTML=`<button class="modal-close" data-close-modal>×</button><span class="eyebrow">VÉRIFICATION LOCALE</span><h2 class="${verified.valid?'good':'bad'}">${verified.valid?'PREUVE VALIDE':'PREUVE INVALIDE'}</h2><div class="proof-checks">${verified.checks.map(([label,ok])=>`<div class="${ok?'ok':'fail'}"><span>${ok?'✓':'×'}</span><strong>${label}</strong></div>`).join('')}</div><div class="proof-fields"><label>Server seed révélé<code>${esc(proof.serverSeed)}</code></label><label>Hash engagé avant le tirage<code>${esc(proof.serverHash)}</code></label><label>Client seed / nonce<code>${esc(proof.clientSeed)} · ${proof.nonce}</code></label><label>Message HMAC<code>${esc(proof.message)}</code></label><label>Digest<code>${esc(proof.digest)}</code></label><label>Roll principal<code>${Number(verified.roll).toFixed(12)}</code></label><label>Prochain engagement<code>${esc(proof.nextServerHash || '')}</code></label></div><button class="cta wide" data-close-modal>Fermer</button>`;
+    root.querySelectorAll('button').forEach((button)=>button.addEventListener('click',(event)=>{event.preventDefault();event.stopPropagation();handleClick(event);}));
+  }catch(error){toast(`Vérification impossible : ${error.message}`,'bad');}
+}
+
 
 document.addEventListener('click', handleClick);
 document.addEventListener('change',(event)=>{
   if(event.target.id==='upgradeMultiplier'){
     const mult=Number(event.target.value);const chance=Math.min(90,95/mult);const el=document.getElementById('chanceValue');if(el)el.textContent=`${chance.toFixed(1)}%`;
     const bar=document.querySelector('.chance-preview i');if(bar)bar.style.width=`${chance}%`;
+    const dial=document.querySelector('.upgrade-dial-preview');if(dial)dial.style.setProperty('--chance',`${chance*3.6}deg`);
+    const winLabel=document.querySelector('.upgrade-dial-preview .dial-zone-label.win');if(winLabel)winLabel.textContent=`WIN ${chance.toFixed(1)}%`;
+    const loseLabel=document.querySelector('.upgrade-dial-preview .dial-zone-label.lose');if(loseLabel)loseLabel.textContent=`LOSE ${(100-chance).toFixed(1)}%`;
   }
 });
 init();

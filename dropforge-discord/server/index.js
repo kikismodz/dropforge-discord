@@ -186,6 +186,27 @@ app.get('/api/me', requireUser, async (req, res) => {
   res.json({ user: publicUser(req.user), inventory: req.user.inventory, history: req.user.history });
 });
 
+app.get('/api/fair', requireUser, (req, res) => {
+  const fair = req.user.fair || {};
+  res.json({
+    clientSeed: fair.clientSeed || '',
+    nonce: Number(fair.nonce) || 0,
+    serverHash: fair.serverHash || '',
+    history: Array.isArray(fair.history) ? fair.history.slice(0, 30) : [],
+  });
+});
+
+app.patch('/api/fair/client-seed', requireUser, (req, res) => {
+  const seed = String(req.body?.clientSeed || '').trim().slice(0, 64);
+  if (seed.length < 3) return res.status(400).json({ error: 'Client seed trop court' });
+  req.user.fair ||= {};
+  req.user.fair.clientSeed = seed;
+  req.user.fair.nonce = Math.max(0, Number(req.user.fair.nonce) || 0);
+  audit('fair', `Client seed modifié par ${req.user.username}`, req.user.id);
+  save();
+  res.json({ clientSeed: seed, nonce: req.user.fair.nonce, serverHash: req.user.fair.serverHash });
+});
+
 app.post('/api/demo/switch', (req, res) => {
   if (!demoMode) return res.status(404).end();
   const user = getUser(String(req.body?.userId || ''));
@@ -313,6 +334,7 @@ app.patch('/api/admin/settings', requireAdmin, (req, res) => {
   if (Number.isFinite(Number(req.body?.dailyGift))) settings.dailyGift = Math.max(0, Number(req.body.dailyGift));
   if (Number.isFinite(Number(req.body?.openingDurationMs))) settings.openingDurationMs = Math.max(1500, Number(req.body.openingDurationMs));
   if (Number.isFinite(Number(req.body?.upgradeDurationMs))) settings.upgradeDurationMs = Math.max(3000, Number(req.body.upgradeDurationMs));
+  if (Number.isFinite(Number(req.body?.battleRoundDurationMs))) settings.battleRoundDurationMs = Math.max(2500, Number(req.body.battleRoundDurationMs));
   save();
   res.json(settings);
 });
@@ -325,7 +347,7 @@ app.post('/api/admin/reset', requireAdmin, (req, res) => {
 
 io.on('connection', (socket) => {
   socket.on('activity:join', ({ roomId, user }) => {
-    const room = String(roomId || 'dropforge-lobby');
+    const room = String(roomId || 'skinova-lobby');
     socket.join(room);
     socket.data.room = room;
     socket.data.user = user || { id: socket.id, username: 'Joueur' };
@@ -348,7 +370,7 @@ app.use((_req, res) => {
 });
 
 httpServer.listen(port, '0.0.0.0', async () => {
-  console.log(`DropForge Discord disponible sur http://localhost:${port}`);
+  console.log(`Skinova Discord disponible sur http://localhost:${port}`);
   if (demoMode) console.log('[Mode démo] Aucun identifiant Discord requis.');
   try {
     botClient = await startDiscordBot({ token: process.env.DISCORD_TOKEN, publicUrl: process.env.ACTIVITY_URL || process.env.PUBLIC_URL, io });

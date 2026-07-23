@@ -2,15 +2,65 @@ import crypto from 'node:crypto';
 import { getState, save, audit, getUser } from './store.js';
 
 const wearKeys = ['FN', 'MW', 'FT', 'WW', 'BS'];
+const MAX_52 = 0xFFFFFFFFFFFFF;
 
-function random() {
-  return crypto.randomInt(0, 1_000_000) / 1_000_000;
+function sha256Hex(value) {
+  return crypto.createHash('sha256').update(String(value)).digest('hex');
 }
 
-function pickWeighted(entries, weightKey = 'weight') {
+function unitFromDigest(digest, offset = 0) {
+  const part = String(digest).slice(offset, offset + 13).padEnd(13, '0');
+  return parseInt(part, 16) / MAX_52;
+}
+
+function ensureFair(user) {
+  user.fair ||= {};
+  user.fair.clientSeed = String(user.fair.clientSeed || `skinova-${String(user.id).slice(0, 24)}`).slice(0, 64);
+  user.fair.nonce = Math.max(0, Number(user.fair.nonce) || 0);
+  if (!user.fair.serverSeed) user.fair.serverSeed = crypto.randomBytes(32).toString('hex');
+  user.fair.serverHash = sha256Hex(user.fair.serverSeed);
+  user.fair.history = Array.isArray(user.fair.history) ? user.fair.history : [];
+  return user.fair;
+}
+
+function fairRoll(user, context) {
+  const fair = ensureFair(user);
+  const serverSeed = fair.serverSeed;
+  const serverHash = fair.serverHash;
+  const nonce = fair.nonce;
+  const clientSeed = fair.clientSeed;
+  const message = `${clientSeed}:${nonce}:${context}`;
+  const digest = crypto.createHmac('sha256', serverSeed).update(message).digest('hex');
+  const nextServerSeed = crypto.randomBytes(32).toString('hex');
+  const nextServerHash = sha256Hex(nextServerSeed);
+  const proof = {
+    algorithm: 'HMAC-SHA256',
+    serverSeed,
+    serverHash,
+    clientSeed,
+    nonce,
+    context,
+    message,
+    digest,
+    roll: unitFromDigest(digest, 0),
+    wearRoll: unitFromDigest(digest, 13),
+    stattrakRoll: unitFromDigest(digest, 26),
+    visualRoll: unitFromDigest(digest, 39),
+    nextServerHash,
+  };
+  fair.nonce += 1;
+  fair.serverSeed = nextServerSeed;
+  fair.serverHash = nextServerHash;
+  proof.at = Date.now();
+  fair.history.unshift(proof);
+  if (fair.history.length > 100) fair.history.length = 100;
+  return proof;
+}
+
+function pickWeighted(entries, roll, weightKey = 'weight') {
   const total = entries.reduce((sum, entry) => sum + Math.max(0, Number(entry[weightKey]) || 0), 0);
   if (!total) return entries[0];
-  let point = random() * total;
+  let point = Math.max(0, Math.min(0.9999999999999999, Number(roll) || 0)) * total;
   for (const entry of entries) {
     point -= Math.max(0, Number(entry[weightKey]) || 0);
     if (point <= 0) return entry;
@@ -18,15 +68,15 @@ function pickWeighted(entries, weightKey = 'weight') {
   return entries.at(-1);
 }
 
-function chooseWear(item) {
+function chooseWear(item, roll) {
   const rates = wearKeys.map((key) => ({ key, weight: Math.max(0, Number(item.wear?.[key]) || 0) }));
-  return pickWeighted(rates).key;
+  return pickWeighted(rates, roll).key;
 }
 
-function materialize(item) {
+function materialize(item, wearRoll = 0, stattrakRoll = 1) {
   const state = getState();
-  const condition = chooseWear(item);
-  const stattrak = Number(item.stattrak) > 0 && random() < Number(item.stattrak) / 100;
+  const condition = chooseWear(item, wearRoll);
+  const stattrak = Number(item.stattrak) > 0 && Number(stattrakRoll) < Number(item.stattrak) / 100;
   const mult = state.settings.valueMultipliers || {};
   const value = Number(item.value) * (Number(mult[condition]) || 1) * (stattrak ? Number(mult.ST) || 1 : 1);
   return {
@@ -48,10 +98,17 @@ export function findCase(caseId) {
   return getState().cases.find((entry) => entry.id === caseId && entry.active !== false) || null;
 }
 
-export function rollCase(caseId) {
+export function rollCase(caseId, fairUser, context = `case:${caseId}`) {
   const caseDef = findCase(caseId);
   if (!caseDef) throw new Error('Caisse introuvable');
-  return materialize(pickWeighted(caseDef.items));
+  if (!fairUser) throw new Error('Utilisateur Provably Fair introuvable');
+  const proof = fairRoll(fairUser, context);
+  const definition = pickWeighted(caseDef.items, proof.roll);
+  const item = materialize(definition, proof.wearRoll, proof.stattrakRoll);
+  proof.itemId = definition.id;
+  proof.condition = item.condition;
+  proof.stattrak = item.stattrak;
+  return { item, proof };
 }
 
 function pushHistory(user, entry) {
@@ -68,7 +125,9 @@ export function openCases(userId, caseId, quantity) {
   const cost = caseDef.price * qty;
   if (user.balance < cost) throw new Error('Solde insuffisant');
   user.balance -= cost;
-  const items = Array.from({ length: qty }, () => rollCase(caseId));
+  const rolls = Array.from({ length: qty }, (_, index) => rollCase(caseId, user, `open:${caseId}:${index}`));
+  const items = rolls.map((entry) => entry.item);
+  const proofs = rolls.map((entry) => entry.proof);
   const total = items.reduce((sum, it) => sum + it.value, 0);
   user.inventory.unshift(...items);
   user.stats.opens += qty;
@@ -77,11 +136,11 @@ export function openCases(userId, caseId, quantity) {
     type: 'open', outcome: total >= cost ? 'win' : 'lose',
     title: `Ouverture x${qty} · ${caseDef.name}`,
     detail: `${items.length} gains · ${total.toFixed(2)} CR`,
-    cost, payout: total, profit: total - cost, items,
+    cost, payout: total, profit: total - cost, items, proofs,
   });
   audit('open', `${user.username} ouvre ${caseDef.name} x${qty}`, user.id);
   save();
-  return { case: caseDef, items, cost, total, profit: total - cost, balance: user.balance };
+  return { case: caseDef, items, proofs, cost, total, profit: total - cost, balance: user.balance, nextServerHash: user.fair.serverHash };
 }
 
 export function sellItem(userId, uid) {
@@ -116,13 +175,19 @@ export function runUpgrade(userId, uid, multiplier) {
   const source = user.inventory[index];
   const mult = Math.min(10, Math.max(1.2, Number(multiplier) || 2));
   const chance = Math.min(0.9, 0.95 / mult);
-  const success = random() < chance;
+  const proof = fairRoll(user, `upgrade:${uid}:${mult.toFixed(4)}`);
+  const success = proof.roll < chance;
+  proof.chance = chance;
+  proof.success = success;
   user.inventory.splice(index, 1);
   let result = null;
   if (success) {
     const allItems = getState().cases.flatMap((c) => c.items).filter((it) => Number(it.value) >= source.value * mult * 0.75);
     const target = allItems.length ? allItems.sort((a, b) => Math.abs(a.value - source.value * mult) - Math.abs(b.value - source.value * mult))[0] : getState().cases.at(-1).items.at(-1);
-    result = materialize(target);
+    result = materialize(target, proof.wearRoll, proof.stattrakRoll);
+    proof.itemId = target.id;
+    proof.condition = result.condition;
+    proof.stattrak = result.stattrak;
     user.inventory.unshift(result);
   }
   user.stats.upgrades += 1;
@@ -132,10 +197,10 @@ export function runUpgrade(userId, uid, multiplier) {
     type: 'upgrade', outcome: success ? 'win' : 'lose', title: success ? 'Upgrade réussi' : 'Upgrade perdu',
     detail: `${source.weapon} · ${source.name} → x${mult.toFixed(1)}`,
     cost: source.value, payout: result?.value || 0, profit: (result?.value || 0) - source.value,
-    items: result ? [result] : [source], chance: chance * 100,
+    items: result ? [result] : [source], chance: chance * 100, proofs: [proof],
   });
   save();
-  return { success, chance: chance * 100, source, result, balance: user.balance };
+  return { success, chance: chance * 100, source, result, proof, balance: user.balance, nextServerHash: user.fair.serverHash };
 }
 
 function botPlayer(index) {
@@ -188,11 +253,12 @@ export function startBattle(userId, battleId, fillBots = true) {
   for (const player of battle.players) if (!player.bot) getUser(player.id).balance -= entryCost;
   const rounds = [];
   const totals = Object.fromEntries(battle.players.map((p) => [p.id, 0]));
+  const fairUser = getUser(battle.ownerId) || getUser(userId);
   for (let round = 0; round < battle.rounds; round += 1) {
     const drops = battle.players.map((player) => {
-      const item = rollCase(battle.caseId);
-      totals[player.id] += item.value;
-      return { playerId: player.id, item };
+      const rolled = rollCase(battle.caseId, fairUser, `battle:${battle.id}:${round + 1}:${player.id}`);
+      totals[player.id] += rolled.item.value;
+      return { playerId: player.id, item: rolled.item, proof: rolled.proof };
     });
     rounds.push({ round: round + 1, drops });
   }
@@ -213,12 +279,12 @@ export function startBattle(userId, battleId, fillBots = true) {
       type: 'battle', outcome: won ? 'win' : 'lose', title: `${won ? 'Battle gagnée' : 'Battle perdue'} · ${caseDef.name}`,
       detail: `${battle.players.length} joueurs · ${battle.rounds} manches`, cost: entryCost,
       payout: won ? prize : 0, profit: (won ? prize : 0) - entryCost, items: playerItems,
-      battleId: battle.id, totals, winnerIds,
+      battleId: battle.id, totals, winnerIds, proofs: rounds.map((r) => r.drops.find((d) => d.playerId === player.id).proof),
     });
   }
   battle.status = 'finished';
   battle.startedAt = Date.now();
-  battle.result = { rounds, totals, winnerIds, pot, prize };
+  battle.result = { rounds, totals, winnerIds, pot, prize, roundDurationMs: Math.max(2500, Number(getState().settings.battleRoundDurationMs) || 5600) };
   audit('battle', `Battle terminée : ${caseDef.name} · ${winnerIds.length} gagnant(s)`, userId);
   save();
   return battle;

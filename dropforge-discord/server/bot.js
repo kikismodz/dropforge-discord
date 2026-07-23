@@ -51,7 +51,7 @@ export async function startDiscordBot({ token, publicUrl, io }) {
     try {
       if (interaction.isChatInputCommand()) {
         const user = upsertDiscordUser(discordProfile(interaction.user));
-        if (interaction.commandName === 'dropforge') {
+        if (interaction.commandName === 'skinova') {
           const embed = new EmbedBuilder()
             .setColor('#ff3d8d')
             .setTitle('DROP⟡FORGE — Discord Activity')
@@ -60,7 +60,7 @@ export async function startDiscordBot({ token, publicUrl, io }) {
               { name: 'Solde', value: `${user.balance.toFixed(2)} CR`, inline: true },
               { name: 'Inventaire', value: `${user.inventory.length} objet(s)`, inline: true },
             );
-          const components = publicUrl ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Lancer DropForge').setStyle(ButtonStyle.Link).setURL(publicUrl))] : [];
+          const components = publicUrl ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Lancer Skinova').setStyle(ButtonStyle.Link).setURL(publicUrl))] : [];
           await interaction.reply({ embeds: [embed], components, ephemeral: true });
           return;
         }
@@ -87,7 +87,7 @@ export async function startDiscordBot({ token, publicUrl, io }) {
         }
         if (interaction.commandName === 'leaderboard') {
           const users = [...getState().users].filter((u) => !u.banned).sort((a, b) => b.balance - a.balance).slice(0, 10);
-          await interaction.reply({ embeds: [new EmbedBuilder().setColor('#ffc447').setTitle('🏆 Classement DropForge').setDescription(users.map((u, i) => `**${i + 1}. ${u.username}** — ${u.balance.toFixed(2)} CR`).join('\n'))] });
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor('#ffc447').setTitle('🏆 Classement Skinova').setDescription(users.map((u, i) => `**${i + 1}. ${u.username}** — ${u.balance.toFixed(2)} CR`).join('\n'))] });
           return;
         }
         if (interaction.commandName === 'battle') {
