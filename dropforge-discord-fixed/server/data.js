@@ -1,0 +1,136 @@
+const wear = { FN: 8, MW: 18, FT: 42, WW: 20, BS: 12 };
+const multipliers = { FN: 1, MW: 0.88, FT: 0.68, WW: 0.52, BS: 0.4, ST: 1.35 };
+
+function item(id, weapon, name, value, weight, rarity, image, stattrak = 10) {
+  return { id, weapon, name, value, weight, rarity, image, wear: { ...wear }, stattrak };
+}
+
+export const initialCases = [
+  {
+    id: 'confirmed-vault', name: 'CONFIRMED VAULT', price: 75, active: true,
+    accent: '#ff3d8d', image: '/assets/cases/confirmed-vault.webp', tag: 'USP-S COLLECTION',
+    items: [
+      item('cv1','USP-S','Night Ops',8,19,'consumer','/assets/weapons/pistol.webp'),
+      item('cv2','USP-S','Blueprint',13,17,'industrial','/assets/weapons/pistol.webp'),
+      item('cv3','USP-S','Ticket to Hell',21,14,'mil-spec','/assets/weapons/pistol.webp'),
+      item('cv4','USP-S','Cortex',31,11,'restricted','/assets/weapons/pistol.webp'),
+      item('cv5','USP-S','Cyrex',43,8,'restricted','/assets/weapons/pistol.webp'),
+      item('cv6','USP-S','The Traitor',58,6,'classified','/assets/weapons/pistol.webp'),
+      item('cv7','USP-S','Printstream',72,5,'classified','/assets/weapons/pistol.webp'),
+      item('cv8','USP-S','Kill Confirmed',98,8,'covert','/assets/weapons/pistol.webp'),
+      item('cv9','USP-S','Orion',140,5,'covert','/assets/weapons/pistol.webp'),
+      item('cv10','USP-S','Neo-Noir',210,3.5,'covert','/assets/weapons/pistol.webp'),
+      item('cv11','USP-S','Whiteout',430,2.5,'gold','/assets/weapons/pistol.webp'),
+      item('cv12','USP-S','Crimson Legacy',980,1,'gold','/assets/weapons/pistol.webp'),
+    ],
+  },
+  {
+    id: 'ak-legends', name: 'AK LEGENDS', price: 115, active: true,
+    accent: '#ff6747', image: '/assets/cases/ak-legends.webp', tag: 'AK-47 ONLY',
+    items: [
+      item('ak1','AK-47','Uncharted',11,19,'consumer','/assets/weapons/ak.webp'),
+      item('ak2','AK-47','Slate',19,17,'industrial','/assets/weapons/ak.webp'),
+      item('ak3','AK-47','Elite Build',31,14,'mil-spec','/assets/weapons/ak.webp'),
+      item('ak4','AK-47','Redline',48,11,'restricted','/assets/weapons/ak.webp'),
+      item('ak5','AK-47','Ice Coaled',66,8,'restricted','/assets/weapons/ak.webp'),
+      item('ak6','AK-47','Neon Revolution',88,6,'classified','/assets/weapons/ak.webp'),
+      item('ak7','AK-47','Bloodsport',109,5,'classified','/assets/weapons/ak.webp'),
+      item('ak8','AK-47','Neon Rider',148,8,'covert','/assets/weapons/ak.webp'),
+      item('ak9','AK-47','Vulcan',230,5,'covert','/assets/weapons/ak.webp'),
+      item('ak10','AK-47','Fuel Injector',390,3.5,'covert','/assets/weapons/ak.webp'),
+      item('ak11','AK-47','Fire Serpent',1050,2.5,'gold','/assets/weapons/ak.webp'),
+      item('ak12','AK-47','Wild Lotus',4200,1,'gold','/assets/weapons/ak.webp'),
+    ],
+  },
+  {
+    id: 'sniper-ritual', name: 'SNIPER RITUAL', price: 145, active: true,
+    accent: '#9d67ff', image: '/assets/cases/sniper-ritual.webp', tag: 'SNIPER COLLECTION',
+    items: [
+      item('aw1','AWP','Acheron',14,19,'consumer','/assets/weapons/awp.webp'),
+      item('aw2','AWP','Mortis',25,17,'industrial','/assets/weapons/awp.webp'),
+      item('aw3','AWP','Exoskeleton',39,14,'mil-spec','/assets/weapons/awp.webp'),
+      item('aw4','AWP','Duality',58,11,'restricted','/assets/weapons/awp.webp'),
+      item('aw5','AWP','Chromatic Aberration',82,8,'restricted','/assets/weapons/awp.webp'),
+      item('aw6','AWP','Neo-Noir',108,6,'classified','/assets/weapons/awp.webp'),
+      item('aw7','AWP','Hyper Beast',138,5,'classified','/assets/weapons/awp.webp'),
+      item('aw8','AWP','Asiimov',195,8,'covert','/assets/weapons/awp.webp'),
+      item('aw9','AWP','Containment Breach',310,5,'covert','/assets/weapons/awp.webp'),
+      item('aw10','AWP','Lightning Strike',590,3.5,'covert','/assets/weapons/awp.webp'),
+      item('aw11','AWP','Medusa',1800,2.5,'gold','/assets/weapons/awp.webp'),
+      item('aw12','AWP','Dragon Lore',7200,1,'gold','/assets/weapons/awp.webp'),
+    ],
+  },
+  {
+    id: 'budget-frenzy', name: 'BUDGET FRENZY', price: 30, active: true,
+    accent: '#35e7ff', image: '/assets/cases/budget-frenzy.webp', tag: 'STARTER MIX',
+    items: [
+      item('bf1','Glock-18','Moonrise',3,20,'consumer','/assets/weapons/pistol.webp'),
+      item('bf2','MP9','Food Chain',5,18,'industrial','/assets/weapons/smg.webp'),
+      item('bf3','P250','See Ya Later',8,14,'mil-spec','/assets/weapons/pistol.webp'),
+      item('bf4','FAMAS','Mecha Industries',12,11,'restricted','/assets/weapons/rifle.webp'),
+      item('bf5','M4A4','Tooth Fairy',17,8,'restricted','/assets/weapons/rifle.webp'),
+      item('bf6','USP-S','Cortex',22,5,'classified','/assets/weapons/pistol.webp'),
+      item('bf7','AK-47','Slate',29,4,'classified','/assets/weapons/ak.webp'),
+      item('bf8','Desert Eagle','Printstream',42,8,'classified','/assets/weapons/pistol.webp'),
+      item('bf9','M4A1-S','Nightmare',65,5,'covert','/assets/weapons/rifle.webp'),
+      item('bf10','AK-47','Redline',96,3.5,'covert','/assets/weapons/ak.webp'),
+      item('bf11','AWP','Asiimov',220,2.5,'gold','/assets/weapons/awp.webp'),
+      item('bf12','Knife','Doppler Fang',760,1,'gold','/assets/weapons/knife.webp',0),
+    ],
+  },
+  {
+    id: 'knife-protocol', name: 'KNIFE PROTOCOL', price: 260, active: true,
+    accent: '#ffc447', image: '/assets/cases/knife-protocol.webp', tag: 'KNIFE VAULT',
+    items: [
+      item('kp1','Knife','Safari Mesh',26,19,'consumer','/assets/weapons/knife.webp',0),
+      item('kp2','Knife','Scorched',45,17,'industrial','/assets/weapons/knife.webp',0),
+      item('kp3','Knife','Blue Steel',70,14,'mil-spec','/assets/weapons/knife.webp',0),
+      item('kp4','Knife','Crimson Web',105,11,'restricted','/assets/weapons/knife.webp',0),
+      item('kp5','Knife','Damascus Steel',150,8,'restricted','/assets/weapons/knife.webp',0),
+      item('kp6','Knife','Ultraviolet',205,6,'classified','/assets/weapons/knife.webp',0),
+      item('kp7','Knife','Tiger Tooth',255,5,'classified','/assets/weapons/knife.webp',0),
+      item('kp8','Knife','Doppler Phase',345,8,'covert','/assets/weapons/knife.webp',0),
+      item('kp9','Knife','Marble Fade',540,5,'covert','/assets/weapons/knife.webp',0),
+      item('kp10','Knife','Gamma Doppler',880,3.5,'covert','/assets/weapons/knife.webp',0),
+      item('kp11','Knife','Ruby',2100,2.5,'gold','/assets/weapons/knife.webp',0),
+      item('kp12','Knife','Emerald Crown',4800,1,'gold','/assets/weapons/knife.webp',0),
+    ],
+  },
+  {
+    id: 'royal-overdrive', name: 'ROYAL OVERDRIVE', price: 420, active: true,
+    accent: '#ff3d8d', image: '/assets/cases/royal-overdrive.webp', tag: 'HIGH ROLLER',
+    items: [
+      item('ro1','M4A1-S','Player Two',42,19,'consumer','/assets/weapons/rifle.webp'),
+      item('ro2','AK-47','Bloodsport',72,17,'industrial','/assets/weapons/ak.webp'),
+      item('ro3','AWP','Hyper Beast',112,14,'mil-spec','/assets/weapons/awp.webp'),
+      item('ro4','Gloves','Overtake',170,11,'restricted','/assets/weapons/gloves.webp',0),
+      item('ro5','Knife','Ultraviolet',240,8,'restricted','/assets/weapons/knife.webp',0),
+      item('ro6','AK-47','Neon Rider',330,6,'classified','/assets/weapons/ak.webp'),
+      item('ro7','AWP','Asiimov',410,5,'classified','/assets/weapons/awp.webp'),
+      item('ro8','Gloves','Crimson Kimono',580,8,'covert','/assets/weapons/gloves.webp',0),
+      item('ro9','Knife','Gamma Doppler',920,5,'covert','/assets/weapons/knife.webp',0),
+      item('ro10','AWP','Medusa',1800,3.5,'gold','/assets/weapons/awp.webp'),
+      item('ro11','AK-47','Wild Lotus',4200,2.5,'gold','/assets/weapons/ak.webp'),
+      item('ro12','AWP','Dragon Lore',8500,1,'gold','/assets/weapons/awp.webp'),
+    ],
+  },
+];
+
+export const initialState = {
+  settings: {
+    dailyGift: 100,
+    openingDurationMs: 5200,
+    upgradeDurationMs: 9500,
+    sellRate: 1,
+    valueMultipliers: multipliers,
+  },
+  cases: initialCases,
+  users: [
+    { id: 'demo-admin', username: 'ForgeMaster', avatar: '', balance: 2500, admin: true, banned: false, inventory: [], history: [], stats: { opens: 0, battles: 0, battleWins: 0, upgrades: 0, upgradeWins: 0, profit: 0 }, lastDaily: 0 },
+    { id: 'demo-nova', username: 'NOVA', avatar: '', balance: 980, admin: false, banned: false, inventory: [], history: [], stats: { opens: 12, battles: 6, battleWins: 3, upgrades: 4, upgradeWins: 1, profit: 124 }, lastDaily: 0 },
+    { id: 'demo-raven', username: 'RAVEN', avatar: '', balance: 740, admin: false, banned: false, inventory: [], history: [], stats: { opens: 9, battles: 4, battleWins: 2, upgrades: 2, upgradeWins: 1, profit: 62 }, lastDaily: 0 },
+    { id: 'demo-kira', username: 'KIRA', avatar: '', balance: 530, admin: false, banned: false, inventory: [], history: [], stats: { opens: 7, battles: 3, battleWins: 1, upgrades: 1, upgradeWins: 0, profit: -33 }, lastDaily: 0 },
+  ],
+  battles: [],
+  audit: [],
+};
