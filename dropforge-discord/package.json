@@ -1,9 +1,9 @@
 {
   "name": "skinova-discord-activity",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "Skinova Discord Activity V1 — premium black/orange case opening interface, full admin case/drop editor, provably fair and live battles with fictitious credits only",
+  "description": "Skinova Discord Activity V1.1 — corrected proportional upgrade dial, live inventory sync, responsive scrolling and simplified rarity inventory.",
   "scripts": {
     "dev": "concurrently -k -n CLIENT,SERVER -c cyan,magenta \"vite --host 0.0.0.0\" \"node --watch server/index.js\"",
     "build": "vite build",

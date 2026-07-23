@@ -29,6 +29,32 @@ const state = {
 function money(value) {
   return Number(value || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+function upgradeChancePercent(multiplier) {
+  const mult = Math.max(1.01, Number(multiplier) || 2);
+  return Math.max(1, Math.min(90, (0.95 / mult) * 100));
+}
+function dialBackground(chance) {
+  const angle = Math.max(0, Math.min(360, Number(chance) * 3.6));
+  return `conic-gradient(from 0deg, #ff9a1f 0deg ${angle}deg, #303844 ${angle}deg 360deg)`;
+}
+function updateUpgradeDial(multiplier) {
+  const chance = upgradeChancePercent(multiplier);
+  const value = document.getElementById('chanceValue');
+  if (value) value.textContent = `${chance.toFixed(1)}%`;
+  const bar = document.querySelector('.chance-preview i');
+  if (bar) bar.style.width = `${chance}%`;
+  const dial = document.querySelector('.upgrade-dial-preview');
+  if (dial) {
+    // Direct assignment forces Discord WebView to repaint the conic gradient.
+    dial.style.background = dialBackground(chance);
+    dial.dataset.chance = String(chance);
+  }
+  const winLabel = document.querySelector('.upgrade-dial-preview .dial-zone-label.win');
+  if (winLabel) winLabel.textContent = `WIN ${chance.toFixed(1)}%`;
+  const loseLabel = document.querySelector('.upgrade-dial-preview .dial-zone-label.lose');
+  if (loseLabel) loseLabel.textContent = `LOSE ${(100 - chance).toFixed(1)}%`;
+  return chance;
+}
 function esc(value) {
   return String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#039;', '"':'&quot;' }[char]));
 }
@@ -132,7 +158,7 @@ function modal(html, cls = '') {
     if (event.target === backdrop) closeModal();
   });
 }
-function closeModal() { document.getElementById('modalRoot').innerHTML = ''; }
+function closeModal() { document.getElementById('modalRoot').innerHTML = ''; if (state.user && ['inventory','upgrade'].includes(state.active)) renderMain(); }
 
 async function initDiscord() { state.config = await api('/config'); }
 
@@ -169,7 +195,7 @@ function connectSocket() {
   setInterval(async()=>{try{const p=await api('/battles');state.battles=p.battles||[];if(state.active==='battles')renderMain();}catch{}},5000);
 }
 function renderLoading() {
-  document.getElementById('app').innerHTML = `<div class="loading-screen"><div class="logo-mark pulse">SV</div><strong>SKINOVA</strong><small>Chargement de Skinova V1…</small></div>`;
+  document.getElementById('app').innerHTML = `<div class="loading-screen"><div class="logo-mark pulse">SV</div><strong>SKINOVA</strong><small>Chargement de Skinova V1.1…</small></div>`;
 }
 
 function navButton(id, icon, label) {
@@ -182,7 +208,7 @@ function render() {
       <aside class="skinova-sidebar">
         <div class="skinova-brand" data-nav="home">
           <span class="skinova-emblem"><i></i></span>
-          <div><strong>SKINOVA</strong><small>DISCORD ACTIVITY · V1</small></div>
+          <div><strong>SKINOVA</strong><small>DISCORD ACTIVITY · V1.1</small></div>
         </div>
         <div class="skinova-user-mini">
           ${avatar(state.user,'small')}
@@ -218,7 +244,7 @@ function render() {
           </div>
         </header>
         <main class="skinova-main" id="mainStage"></main>
-        <footer class="skinova-statusbar"><span><i></i> ${state.presence.length || 1} MEMBRE(S) EN LIGNE</span><b>ÉVÉNEMENT · DROP HEAT ACTIF</b><span>SKINOVA V1 · CRÉDITS FICTIFS</span></footer>
+        <footer class="skinova-statusbar"><span><i></i> ${state.presence.length || 1} MEMBRE(S) EN LIGNE</span><b>ÉVÉNEMENT · DROP HEAT ACTIF</b><span>SKINOVA V1.1 · CRÉDITS FICTIFS</span></footer>
       </section>
       <nav class="skinova-mobile-nav">
         ${navButton('home','⌂','Accueil')}${navButton('cases','▣','Caisses')}${navButton('battles','⚔','Battles')}${navButton('upgrade','↗','Upgrade')}${navButton('inventory','▦','Inventaire')}
@@ -308,13 +334,22 @@ function caseCard(c) {
 
 function renderInventory() {
   const total = state.inventory.reduce((sum, item) => sum + Number(item.value), 0);
-  return `<section class="view"><div class="page-head"><div><span class="eyebrow">LOCKER</span><h1>Ton inventaire</h1><p>Les objets sont liés à ton compte Discord.</p></div><div class="summary-card"><small>VALEUR TOTALE</small><strong>${money(total)} CR</strong><button data-action="sell-all" ${state.inventory.length ? '' : 'disabled'}>Tout revendre à 100 %</button></div></div>
-    ${state.inventory.length ? `<div class="item-grid">${state.inventory.map(itemCard).join('')}</div>` : empty('▦','Inventaire vide','Ouvre une caisse ou gagne une battle pour récupérer des objets.')}
+  return `<section class="view inventory-view-v11"><div class="page-head"><div><span class="eyebrow">LOCKER</span><h1>Ton inventaire</h1><p>Clique sur une arme pour la vendre ou l’envoyer dans l’améliorateur.</p></div><div class="summary-card"><small>VALEUR TOTALE</small><strong>${money(total)} CR</strong><button data-action="sell-all" ${state.inventory.length ? '' : 'disabled'}>Tout revendre à 100 %</button></div></div>
+    ${state.inventory.length ? `<div class="inventory-grid-v11">${state.inventory.map(inventoryTile).join('')}</div>` : empty('▦','Inventaire vide','Ouvre une caisse ou gagne une battle pour récupérer des objets.')}
   </section>`;
+}
+function inventoryTile(item) {
+  const title = `${item.stattrak ? 'StatTrak™ ' : ''}${item.weapon} · ${item.name}`;
+  return `<button class="inventory-tile-v11" data-item-menu="${esc(item.uid)}" style="--rarity:${rarityColor[item.rarity] || '#999'}"><span class="inventory-rarity-v11">${esc(item.rarity.toUpperCase())}</span><span class="inventory-art-v11"><img src="${item.image}" alt="${esc(title)}"></span><strong>${esc(title)}</strong><small>${esc(item.condition || '')}${item.stattrak ? ' · ST™' : ''} · ${money(item.value)} CR</small></button>`;
 }
 function itemCard(item, compact = false) {
   const title = `${item.stattrak ? 'StatTrak™ ' : ''}${item.weapon} · ${item.name}`;
   return `<article class="item-card ${compact ? 'compact' : ''}" style="--rarity:${rarityColor[item.rarity] || '#999'}"><div class="item-image"><img src="${item.image}" alt="${esc(title)}"><i></i></div><small>${esc(item.rarity.toUpperCase())}</small><strong>${esc(title)}</strong><div class="badges"><span>${esc(item.condition)}</span>${item.stattrak ? '<span class="st">ST™</span>' : ''}</div><footer><b>${money(item.value)} CR</b>${compact ? '' : `<button data-sell="${item.uid}">Vendre</button>`}</footer></article>`;
+}
+function inventoryItemModal(item) {
+  if (!item) return;
+  const title = `${item.stattrak ? 'StatTrak™ ' : ''}${item.weapon} · ${item.name}`;
+  modal(`<div class="inventory-item-modal-v11" style="--rarity:${rarityColor[item.rarity] || '#999'}"><button class="modal-close" data-close-modal>×</button><span class="eyebrow">${esc(item.rarity.toUpperCase())}</span><div class="inventory-modal-art-v11"><img src="${item.image}" alt="${esc(title)}"></div><h2>${esc(title)}</h2><div class="inventory-modal-meta-v11"><span>${esc(item.condition || '')}</span>${item.stattrak ? '<span>StatTrak™</span>' : ''}<b>${money(item.value)} CR</b></div><div class="inventory-modal-actions-v11"><button class="ghost" data-action="inventory-upgrade" data-item-uid="${esc(item.uid)}">Améliorer</button><button class="cta" data-action="inventory-sell" data-item-uid="${esc(item.uid)}">Vendre à 100 %</button></div></div>`, 'inventory-item-wrap-v11');
 }
 function renderBattles() {
   const open = state.battles.filter((b) => b.status === 'waiting');
@@ -349,7 +384,7 @@ function renderUpgrade() {
       </div>
       <div class="upgrade-wheel-shell v7-dial-shell">
         <div class="dial-head"><span>02</span><div><strong>Lecture du résultat</strong><small>Le cadran ne bouge jamais. Le cran blanc est le seul élément animé.</small></div></div>
-        <div class="upgrade-dial-preview" style="--chance:171deg">
+        <div class="upgrade-dial-preview" style="background:conic-gradient(from 0deg,#ff9a1f 0deg 171deg,#303844 171deg 360deg)">
           <div class="dial-scale"></div><div class="dial-zone-label win">WIN 47.5%</div><div class="dial-zone-label lose">LOSE 52.5%</div>
           <div class="dial-needle preview"><i></i></div><div class="dial-hub"><span>SV</span><small>V1</small></div>
         </div>
@@ -543,6 +578,12 @@ async function handleClick(event) {
     button.textContent=`Ouvrir x${state.quantity} · ${money(state.selectedCase.price*state.quantity)} CR`;
     return;
   }
+  const inventoryItem = event.target.closest('[data-item-menu]');
+  if (inventoryItem) {
+    const item = state.inventory.find((entry) => entry.uid === inventoryItem.dataset.itemMenu);
+    inventoryItemModal(item);
+    return;
+  }
   const action = event.target.closest('[data-action]')?.dataset.action;
   if (action === 'profile-menu') { profileMenu(); return; }
   if (action === 'fair-center') { await fairCenterModal(); return; }
@@ -556,9 +597,26 @@ async function handleClick(event) {
     try { const r=await api('/daily',{method:'POST'}); toast(`+${r.amount} CR reçus`,'good'); await refreshAll(); } catch(e){toast(e.message,'bad');} return;
   }
   if (action === 'confirm-open') {
-    try { const c=state.selectedCase; const r=await api(`/cases/${c.id}/open`,{method:'POST',body:{quantity:state.quantity}}); openingModal(c,r); await reloadUser(); document.getElementById('topBalance').textContent=`${money(state.user.balance)} CR`; } catch(e){toast(e.message,'bad');} return;
+    try { const c=state.selectedCase; const r=await api(`/cases/${c.id}/open`,{method:'POST',body:{quantity:state.quantity}}); openingModal(c,r); await reloadUser(); document.getElementById('topBalance').textContent=`${money(state.user.balance)} CR`; renderMain(); } catch(e){toast(e.message,'bad');} return;
   }
   if (action === 'sell-all') { try{await api('/inventory/sell-all',{method:'POST'});toast('Inventaire revendu sans frais','good');await refreshAll();}catch(e){toast(e.message,'bad');}return; }
+  if (action === 'inventory-sell') {
+    const uid = event.target.closest('[data-item-uid]')?.dataset.itemUid;
+    if (!uid) return;
+    try { await api(`/inventory/${uid}/sell`,{method:'POST'}); closeModal(); toast('Objet revendu à 100 %','good'); await refreshAll(); } catch(e) { toast(e.message,'bad'); }
+    return;
+  }
+  if (action === 'inventory-upgrade') {
+    const uid = event.target.closest('[data-item-uid]')?.dataset.itemUid;
+    closeModal();
+    state.active = 'upgrade';
+    document.querySelectorAll('[data-nav]').forEach((el)=>el.classList.toggle('active',el.dataset.nav===state.active));
+    renderMain();
+    const select = document.getElementById('upgradeItem');
+    if (select && uid) select.value = uid;
+    updateUpgradeDial(Number(document.getElementById('upgradeMultiplier')?.value || 2));
+    return;
+  }
   if (action === 'new-battle') { newBattleModal(); return; }
   if (action === 'create-battle') {
     try{const b=await api('/battles',{method:'POST',body:{caseId:document.getElementById('newBattleCase').value,rounds:Number(document.getElementById('newBattleRounds').value),slots:Number(document.getElementById('newBattleSlots').value)}});closeModal();toast('Battle créée','good');state.battles.unshift(b);renderMain();}catch(e){toast(e.message,'bad');}return;
@@ -566,7 +624,7 @@ async function handleClick(event) {
   if (action === 'start-upgrade') {
     const uid=document.getElementById('upgradeItem')?.value,multiplier=Number(document.getElementById('upgradeMultiplier')?.value||2);
     if(!uid)return;
-    try{const r=await api('/upgrade',{method:'POST',body:{uid,multiplier}});showUpgradeResult(r,multiplier);await reloadUser();document.getElementById('topBalance').textContent=`${money(state.user.balance)} CR`;}catch(e){toast(e.message,'bad');}return;
+    try{const r=await api('/upgrade',{method:'POST',body:{uid,multiplier}});showUpgradeResult(r,multiplier);await reloadUser();document.getElementById('topBalance').textContent=`${money(state.user.balance)} CR`;renderMain();}catch(e){toast(e.message,'bad');}return;
   }
   if (action === 'admin-new-case') { adminCaseModal(); return; }
   if (action === 'admin-save-settings') {
@@ -614,13 +672,13 @@ async function handleClick(event) {
   if(ban){const u=state.admin.users.find(x=>x.id===ban.dataset.adminBan);try{await api(`/admin/users/${u.id}`,{method:'PATCH',body:{banned:!u.banned}});toast('Compte mis à jour','good');await loadAdmin();}catch(e){toast(e.message,'bad');}return;}
 }
 function showUpgradeResult(result,multiplier){
-  const chance=Math.max(1,Math.min(95,Number(result.chance)||0));
+  const chance=Math.max(1,Math.min(90,Number(result.chance)||0));
   const chanceDeg=chance*3.6;
   const duration=10800;
   const landing=Math.max(0,Math.min(359.999999,Number(result.proof?.roll ?? (result.success?chance/200:(chance/100+(1-chance/100)/2)))*360));
   const finalRotation=15*360+landing;
   state.lastProofs = result.proof ? [result.proof] : [];
-  modal(`<div class="upgrade-result-modal v7-upgrade-result" style="--chance:${chanceDeg}deg;--duration:${duration}ms"><div class="result-topline"><span>UPGRADE x${multiplier}</span><b>${chance.toFixed(1)}% DE CHANCE</b></div><h2 id="upgradeStatus">Le cran est lancé</h2><p>Orange = WIN. Gris = LOSE. La position finale vient du tirage vérifiable.</p><div class="result-dial"><div class="dial-scale"></div><div class="dial-zone-label win">WIN ${chance.toFixed(1)}%</div><div class="dial-zone-label lose">LOSE ${(100-chance).toFixed(1)}%</div><div class="result-needle" id="resultNeedle"><i></i></div><div class="dial-hub"><span>SV</span><small>FAIR</small></div><div class="dial-scan"></div></div><div class="result-progress"><i></i></div><div class="upgrade-proof-mini">ROLL <b>${Number(result.proof?.roll || 0).toFixed(8)}</b> · ARRÊT <b>${landing.toFixed(2)}°</b></div><div class="upgrade-reveal hidden" id="upgradeReveal"></div></div>`,'upgrade-result-wrap');
+  modal(`<div class="upgrade-result-modal v7-upgrade-result" style="--duration:${duration}ms"><div class="result-topline"><span>UPGRADE x${multiplier}</span><b>${chance.toFixed(1)}% DE CHANCE</b></div><h2 id="upgradeStatus">Le cran est lancé</h2><p>Orange = WIN. Gris = LOSE. La position finale vient du tirage vérifiable.</p><div class="result-dial" style="background:${dialBackground(chance)}"><div class="dial-scale"></div><div class="dial-zone-label win">WIN ${chance.toFixed(1)}%</div><div class="dial-zone-label lose">LOSE ${(100-chance).toFixed(1)}%</div><div class="result-needle" id="resultNeedle"><i></i></div><div class="dial-hub"><span>SV</span><small>FAIR</small></div><div class="dial-scan"></div></div><div class="result-progress"><i></i></div><div class="upgrade-proof-mini">ROLL <b>${Number(result.proof?.roll || 0).toFixed(8)}</b> · ARRÊT <b>${landing.toFixed(2)}°</b></div><div class="upgrade-reveal hidden" id="upgradeReveal"></div></div>`,'upgrade-result-wrap');
   const needle=document.getElementById('resultNeedle');
   const status=document.getElementById('upgradeStatus');
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
@@ -664,12 +722,6 @@ async function proofModal(proof){
 
 document.addEventListener('click', handleClick);
 document.addEventListener('change',(event)=>{
-  if(event.target.id==='upgradeMultiplier'){
-    const mult=Number(event.target.value);const chance=Math.min(90,95/mult);const el=document.getElementById('chanceValue');if(el)el.textContent=`${chance.toFixed(1)}%`;
-    const bar=document.querySelector('.chance-preview i');if(bar)bar.style.width=`${chance}%`;
-    const dial=document.querySelector('.upgrade-dial-preview');if(dial)dial.style.setProperty('--chance',`${chance*3.6}deg`);
-    const winLabel=document.querySelector('.upgrade-dial-preview .dial-zone-label.win');if(winLabel)winLabel.textContent=`WIN ${chance.toFixed(1)}%`;
-    const loseLabel=document.querySelector('.upgrade-dial-preview .dial-zone-label.lose');if(loseLabel)loseLabel.textContent=`LOSE ${(100-chance).toFixed(1)}%`;
-  }
+  if(event.target.id==='upgradeMultiplier') updateUpgradeDial(Number(event.target.value));
 });
 init();

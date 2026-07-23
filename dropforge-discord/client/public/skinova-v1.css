@@ -65,3 +65,50 @@ button{cursor:pointer}
 @media(max-width:1200px){.skinova-dashboard{grid-template-columns:250px minmax(0,1fr)}.home-right-rail{grid-column:1/-1;grid-template-columns:1fr 1fr}.skinova-case-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.item-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.admin-kpis{grid-template-columns:repeat(3,1fr)}.admin-main-grid,.lower-admin{grid-template-columns:1fr}.top-fair{display:none}}
 @media(max-width:900px){body{overflow:auto}.skinova-app{display:block;height:auto;min-height:100vh;padding-bottom:62px}.skinova-sidebar{display:none}.skinova-workspace{min-height:100vh;display:grid;grid-template-rows:58px minmax(calc(100vh - 102px),auto) 38px}.skinova-topbar{padding:0 12px}.skinova-breadcrumb{display:none}.skinova-top-actions{width:100%;justify-content:flex-end}.daily-button{margin-right:auto}.skinova-main{padding:12px 10px 20px;overflow:visible}.skinova-mobile-nav{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;height:62px;background:rgba(8,10,12,.97);border-top:1px solid var(--sv-line-soft);z-index:30}.skinova-mobile-nav .nav-item{height:62px;display:flex;flex-direction:column;justify-content:center;gap:3px;padding:0;border:0;border-radius:0}.skinova-mobile-nav .nav-item span{font-size:16px}.skinova-mobile-nav .nav-item b{font-size:7px}.skinova-statusbar{padding:0 10px}.skinova-statusbar span:last-child{display:none}.skinova-hero{grid-template-columns:1fr;min-height:500px}.hero-content{padding:24px}.hero-content h1{font-size:45px}.hero-case{min-height:220px}.hero-case img{height:210px}.skinova-dashboard{grid-template-columns:1fr}.home-right-rail{grid-column:auto;grid-template-columns:1fr}.skinova-trustbar{grid-template-columns:1fr 1fr;gap:8px}.skinova-trustbar>span{border:0;justify-content:flex-start;padding:7px}.skinova-case-grid{grid-template-columns:1fr 1fr}.skinova-case-card .case-art{height:170px}.item-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.replay-grid{grid-template-columns:1fr 1fr}.admin-kpis{grid-template-columns:1fr 1fr}.admin-table-head{display:none}.admin-case-row{grid-template-columns:55px minmax(0,1fr) auto;gap:7px}.admin-case-row>b,.admin-case-row>.status-pill,.admin-case-row>span{display:none}.admin-row-actions{grid-column:2/4}.admin-user-row{grid-template-columns:34px minmax(0,1fr) 80px}.admin-user-row label,.admin-user-row>button{grid-row:auto}.case-editor-layout{grid-template-columns:1fr}.case-editor-preview{display:none}.wear-editor{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:580px){.skinova-balance{padding:0 7px}.profile-button span,.profile-button>i{display:none}.skinova-hero{min-height:530px}.hero-content{padding:20px}.hero-content h1{font-size:38px}.hero-content h2{font-size:12px;letter-spacing:3px}.hero-features{gap:9px;flex-wrap:wrap}.hero-features span{padding-right:9px}.hero-actions{flex-direction:column}.hero-case img{height:185px}.skinova-dashboard{gap:9px}.showcase-reel{height:142px}.showcase-item img{height:80px}.showcase-item small{display:none}.skinova-trustbar{grid-template-columns:1fr}.skinova-page-head,.admin-hero,.page-head{align-items:flex-start;flex-direction:column;gap:10px}.skinova-case-grid{grid-template-columns:1fr}.item-grid{grid-template-columns:1fr 1fr}.replay-grid{grid-template-columns:1fr}.metrics-grid{grid-template-columns:1fr 1fr}.admin-kpis{grid-template-columns:1fr}.admin-user-row{grid-template-columns:34px minmax(0,1fr)}.admin-user-row label,.admin-user-row>button{grid-column:2}.drop-editor-grid{grid-template-columns:1fr}.skinova-top-actions{gap:5px}.daily-button{font-size:7px;padding:0 9px}.skinova-statusbar b{display:none}}
+
+
+/* =========================================================
+   Skinova V1.1 — responsive viewport, inventory UX and dial repaint fix
+   ========================================================= */
+html,body,#app{height:100%;min-height:0;overflow:hidden}
+body{overflow:hidden}
+.skinova-app{height:100dvh;min-height:0;max-height:100dvh;overflow:hidden}
+.skinova-workspace{min-height:0;height:100%;overflow:hidden}
+.skinova-main{min-height:0;overflow:auto!important;overscroll-behavior:contain;scrollbar-gutter:stable;touch-action:pan-y;-webkit-overflow-scrolling:touch}
+.view,.skinova-page,.inventory-view-v11{min-height:min-content}
+
+.inventory-grid-v11{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;align-items:start}
+.inventory-tile-v11{position:relative;min-width:0;padding:0 0 13px;overflow:hidden;text-align:left;color:#f6f7f9;border:1px solid color-mix(in srgb,var(--rarity) 58%,#303640);border-radius:12px;background:linear-gradient(180deg,color-mix(in srgb,var(--rarity) 36%,#12161c) 0%,color-mix(in srgb,var(--rarity) 18%,#0b0e12) 55%,#090b0e 100%);box-shadow:inset 0 0 54px color-mix(in srgb,var(--rarity) 18%,transparent),0 14px 32px rgba(0,0,0,.26);transition:transform .18s,border-color .18s,box-shadow .18s}
+.inventory-tile-v11:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--rarity) 82%,white);box-shadow:inset 0 0 75px color-mix(in srgb,var(--rarity) 27%,transparent),0 18px 42px rgba(0,0,0,.38)}
+.inventory-tile-v11:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 38%,color-mix(in srgb,var(--rarity) 34%,transparent),transparent 47%);pointer-events:none}
+.inventory-rarity-v11{position:absolute;z-index:3;top:9px;left:9px;padding:4px 6px;border-radius:5px;background:rgba(4,6,8,.68);border:1px solid color-mix(in srgb,var(--rarity) 55%,transparent);color:var(--rarity);font-size:7px;font-weight:900;letter-spacing:.8px}
+.inventory-art-v11{position:relative;z-index:1;display:grid;place-items:center;width:100%;height:150px;padding:18px 12px 8px;background:linear-gradient(180deg,color-mix(in srgb,var(--rarity) 26%,transparent),transparent)}
+.inventory-art-v11:after{content:"";position:absolute;left:12%;right:12%;bottom:7px;height:18px;border-radius:50%;background:var(--rarity);filter:blur(18px);opacity:.38}
+.inventory-art-v11 img{position:relative;z-index:2;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 12px 12px rgba(0,0,0,.55))}
+.inventory-tile-v11>strong,.inventory-tile-v11>small{position:relative;z-index:2;display:block;padding:0 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inventory-tile-v11>strong{font-size:10px;margin-top:8px}.inventory-tile-v11>small{font-size:8px;color:color-mix(in srgb,var(--rarity) 72%,#d8dde3);margin-top:5px}
+
+.inventory-item-wrap-v11{width:min(520px,94vw)}
+.inventory-item-modal-v11{position:relative;padding:28px;text-align:center;overflow:hidden;background:radial-gradient(circle at 50% 36%,color-mix(in srgb,var(--rarity) 30%,transparent),transparent 46%)}
+.inventory-item-modal-v11:before{content:"";position:absolute;inset:0;border-top:3px solid var(--rarity);pointer-events:none;box-shadow:inset 0 0 70px color-mix(in srgb,var(--rarity) 12%,transparent)}
+.inventory-modal-art-v11{height:230px;display:grid;place-items:center;position:relative}.inventory-modal-art-v11:after{content:"";position:absolute;width:65%;height:30px;bottom:19px;border-radius:50%;background:var(--rarity);filter:blur(24px);opacity:.38}.inventory-modal-art-v11 img{position:relative;z-index:1;width:92%;height:100%;object-fit:contain;filter:drop-shadow(0 18px 15px rgba(0,0,0,.58))}
+.inventory-item-modal-v11 h2{font-size:22px;margin:8px 0}.inventory-modal-meta-v11{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap}.inventory-modal-meta-v11 span{padding:5px 8px;border:1px solid color-mix(in srgb,var(--rarity) 45%,#303640);border-radius:5px;background:#0a0d11;color:#b9c0c9;font-size:8px}.inventory-modal-meta-v11 b{color:var(--rarity);font-size:14px}.inventory-modal-actions-v11{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:22px}.inventory-modal-actions-v11 button{height:44px}
+
+
+@media(max-height:760px) and (min-width:901px){
+  .skinova-app{grid-template-columns:220px minmax(0,1fr)}
+  .skinova-workspace{grid-template-rows:54px minmax(0,1fr) 32px}
+  .skinova-topbar{padding-inline:16px}.skinova-main{padding:12px 14px 18px}
+  .skinova-brand{padding-bottom:10px}.skinova-user-mini{padding-block:8px;margin-block:6px}.nav-item{height:36px}.nav-group-label{padding-top:7px}
+  .skinova-event-card{display:none}.sidebar-fair{margin-top:auto}.sidebar-status{padding-top:8px}
+  .page-head{margin-bottom:14px}.page-head h1{font-size:31px}
+}
+@media(max-width:1100px){.inventory-grid-v11{grid-template-columns:repeat(auto-fill,minmax(145px,1fr))}.inventory-art-v11{height:128px}}
+@media(max-width:900px){
+  html,body,#app{height:100%;overflow:hidden!important}
+  .skinova-app{height:100dvh;min-height:0;overflow:hidden}
+  .skinova-workspace{height:100dvh;min-height:0;overflow:hidden}
+  .skinova-main{height:auto!important;max-height:none!important;overflow-y:auto!important;padding-bottom:84px!important}
+  .inventory-grid-v11{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+}
+@media(max-width:620px){.inventory-grid-v11{grid-template-columns:repeat(2,minmax(0,1fr))}.inventory-art-v11{height:118px}.inventory-modal-actions-v11{grid-template-columns:1fr}}

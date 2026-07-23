@@ -1,0 +1,12 @@
+SKINOVA V1.1 — MISE À JOUR RAILWAY
+
+1. Décompresse ce patch.
+2. Envoie tous les fichiers à la racine du dépôt GitHub.
+3. Accepte le remplacement et Commit changes.
+4. Attends Railway: Active.
+5. Ferme puis relance l’Activity Discord.
+
+Build Command: npm run build
+Start Command: npm start
+
+Le patch ne contient pas data/db.json : comptes et inventaires ne sont pas écrasés.
