@@ -142,7 +142,7 @@ function connectSocket() {
   state.socket.on('cases:update', async () => { const p = await api('/cases'); state.cases = p.cases; renderMain(); });
 }
 function renderLoading() {
-  document.getElementById('app').innerHTML = `<div class="loading-screen"><div class="logo-mark pulse">DF</div><strong>DROP<span>FORGE</span></strong><small>Connexion à Discord Activity…</small></div>`;
+  document.getElementById('app').innerHTML = `<div class="loading-screen"><div class="logo-mark pulse">DF</div><strong>DROP<span>FORGE</span></strong><small>Chargement de DropForge V7…</small></div>`;
 }
 
 function navButton(id, icon, label) {
@@ -151,7 +151,7 @@ function navButton(id, icon, label) {
 }
 function render() {
   document.getElementById('app').innerHTML = `
-    <div class="discord-shell">
+    <div class="discord-shell v7-shell">
       <aside class="server-rail">
         <div class="discord-dot">◖◗</div>
         <div class="server-icon active">DF</div>
@@ -159,10 +159,10 @@ function render() {
       </aside>
       <div class="activity-shell">
         <header class="topbar">
-          <div class="brand"><span class="logo-mark small">DF</span><strong>DROP<span>FORGE</span></strong><em>ACTIVITY · FIX 3</em></div>
-          <div class="channel-pill"><i></i><span># dropforge-arena</span><small>${insideDiscord ? 'Dans Discord' : 'Mode aperçu local'}</small></div>
+          <div class="brand"><span class="logo-mark small">DF</span><strong>DROP<span>FORGE</span></strong><em>DISCORD EDITION · V7</em></div>
+          <div class="channel-pill"><i></i><span># dropforge-vault</span><small>${insideDiscord ? 'Dans Discord' : 'Mode aperçu local'}</small></div>
           <div class="top-actions">
-            <button class="daily-button" data-action="daily">🎁 Daily</button>
+            <button class="daily-button" data-action="daily">BONUS DAILY</button>
             <div class="balance"><small>SOLDE</small><b id="topBalance">${money(state.user.balance)} CR</b></div>
             <button class="profile-button" data-action="profile-menu">${avatar(state.user, 'small')}<span>${esc(state.user.username)}</span></button>
           </div>
@@ -213,20 +213,29 @@ function renderMain() {
 
 function renderCases() {
   const featured = state.cases.find((c) => c.id === 'royal-overdrive') || state.cases[0];
-  return `<section class="view cases-view">
-    <div class="hero-card" style="--accent:${featured.accent}">
-      <div class="hero-copy"><span class="eyebrow">DISCORD EXCLUSIVE EVENT</span><h1>Ouvre. Battle.<br><em>Domine le serveur.</em></h1><p>Une expérience multijoueur intégrée à Discord, avec caisses, inventaire et battles en temps réel.</p><div class="hero-actions"><button class="cta" data-open-case="${featured.id}">Ouvrir ${esc(featured.name)}</button><button class="ghost" data-nav="battles">Créer une battle</button></div><div class="hero-stats"><span><b>${state.cases.length}</b> caisses</span><span><b>${state.battles.filter((b)=>b.status==='waiting').length}</b> battles ouvertes</span><span><b>${state.presence.length || 1}</b> en ligne</span></div></div>
-      <div class="hero-visual"><img src="${featured.image}" alt="${esc(featured.name)}"><div class="hero-glow"></div><div class="live-chip">● LIVE DROP</div></div>
+  const waiting = state.battles.filter((b) => b.status === 'waiting').length;
+  return `<section class="view cases-view v7-cases">
+    <div class="hero-card v7-hero" style="--accent:${featured.accent}">
+      <div class="hero-copy">
+        <div class="hero-kicker"><span></span> DROP ROOM · SAISON 07</div>
+        <h1>Le drop commence<br><em>avant l’ouverture.</em></h1>
+        <p>Caisses premium, battles synchronisées et upgrades à haute tension — directement dans ton serveur Discord.</p>
+        <div class="hero-actions"><button class="cta" data-open-case="${featured.id}">Ouvrir la caisse vedette</button><button class="ghost" data-nav="battles">Voir les battles</button></div>
+        <div class="hero-stats"><span><b>${state.cases.length}</b><small>CAISSES LIVE</small></span><span><b>${waiting}</b><small>BATTLES OUVERTES</small></span><span><b>${state.presence.length || 1}</b><small>JOUEURS EN LIGNE</small></span></div>
+      </div>
+      <div class="hero-visual"><div class="hero-noise"></div><img src="${featured.image}" alt="${esc(featured.name)}"><div class="hero-glow"></div><div class="live-chip"><i></i> DROP VEDETTE</div><div class="hero-case-price"><small>À PARTIR DE</small><b>${money(featured.price)} CR</b></div></div>
     </div>
-    <div class="section-heading"><div><span class="eyebrow">CASE ROOM</span><h2>Choisis ta caisse</h2></div><div class="filter-pills"><button class="active">Toutes</button><button>Weapon</button><button>Premium</button></div></div>
+    <div class="drop-strip"><span><i></i> LIVE DROPS</span><div>${state.cases.slice(0,5).map((c)=>`<b>${esc(c.name)}</b><small>${money(c.price)} CR</small>`).join('')}</div></div>
+    <div class="section-heading"><div><span class="eyebrow">CASE COLLECTION</span><h2>Toutes les caisses</h2><p>Choisis un niveau de risque et découvre tous les gains avant de jouer.</p></div><div class="filter-pills"><button class="active">Toutes</button><button>Armes</button><button>Premium</button></div></div>
     <div class="case-grid">${state.cases.map(caseCard).join('')}</div>
   </section>`;
 }
 function caseCard(c) {
   const jackpot = Math.max(...c.items.map((i) => Number(i.value)));
-  return `<article class="case-card" style="--accent:${c.accent}">
-    <div class="case-art"><img src="${c.image}" alt="${esc(c.name)}"><span class="case-live">● ${c.active ? 'ACTIVE' : 'OFF'}</span></div>
-    <div class="case-info"><small>${esc(c.tag)}</small><h3>${esc(c.name)}</h3><div class="case-meta"><span>${c.items.length} gains</span><span>Jackpot ${money(jackpot)} CR</span></div><button data-open-case="${c.id}"><span>Ouvrir</span><b>${money(c.price)} CR</b></button></div>
+  const roiHint = c.price >= 250 ? 'HIGH ROLLER' : c.price >= 100 ? 'POPULAR' : 'STARTER';
+  return `<article class="case-card v7-case-card" style="--accent:${c.accent}">
+    <div class="case-art"><img src="${c.image}" alt="${esc(c.name)}"><span class="case-live"><i></i>${c.active ? 'LIVE' : 'OFF'}</span><span class="case-tier">${roiHint}</span></div>
+    <div class="case-info"><div class="case-title-row"><div><small>${esc(c.tag)}</small><h3>${esc(c.name)}</h3></div><span class="case-count">${c.items.length}</span></div><div class="case-meta"><span>Jackpot <b>${money(jackpot)} CR</b></span><span>Variants FN → BS</span></div><button data-open-case="${c.id}"><span>OUVRIR</span><b>${money(c.price)} CR</b></button></div>
   </article>`;
 }
 function renderInventory() {
@@ -261,9 +270,24 @@ function replayCard(b) {
 }
 function renderUpgrade() {
   const options = state.inventory.map((item) => `<option value="${item.uid}">${esc(item.weapon)} · ${esc(item.name)} (${item.condition}) — ${money(item.value)} CR</option>`).join('');
-  return `<section class="view"><div class="page-head"><div><span class="eyebrow">RISK ENGINE</span><h1>Upgrade</h1><p>Choisis un objet, un multiplicateur et regarde la roue accélérer.</p></div></div>
-    <div class="upgrade-layout"><div class="upgrade-control"><label>Objet sacrifié<select id="upgradeItem">${options || '<option>Aucun objet disponible</option>'}</select></label><label>Multiplicateur<select id="upgradeMultiplier"><option value="1.5">x1.5</option><option value="2" selected>x2</option><option value="3">x3</option><option value="5">x5</option><option value="10">x10</option></select></label><div class="chance-preview"><span>CHANCE ESTIMÉE</span><strong id="chanceValue">47.5%</strong><div><i style="width:47.5%"></i></div></div><button class="cta wide" data-action="start-upgrade" ${state.inventory.length ? '' : 'disabled'}>Lancer l’upgrade</button></div>
-    <div class="upgrade-wheel-shell"><div class="upgrade-wheel"><div class="wheel-win">WIN</div><div class="wheel-lose">LOSE</div><div class="wheel-center"><span>DF</span></div><div class="wheel-pointer"></div></div><div class="wheel-caption"><strong>Zone verte = gain</strong><small>La flèche fixe indique le résultat final.</small></div></div></div>
+  return `<section class="view upgrade-view-v7"><div class="page-head"><div><span class="eyebrow">UPGRADE LAB</span><h1>Upgrade</h1><p>La zone reste fixe. Seul le cran accélère, ralentit et décide du résultat.</p></div><div class="v7-status-pill"><i></i> MOTEUR PROVABLY FAIR</div></div>
+    <div class="upgrade-layout v7-upgrade-layout">
+      <div class="upgrade-control v7-upgrade-control">
+        <div class="control-head"><span>01</span><div><strong>Configure ton risque</strong><small>Plus le multiplicateur monte, plus la zone WIN diminue.</small></div></div>
+        <label>Objet sacrifié<select id="upgradeItem">${options || '<option>Aucun objet disponible</option>'}</select></label>
+        <label>Multiplicateur<select id="upgradeMultiplier"><option value="1.5">x1.5</option><option value="2" selected>x2</option><option value="3">x3</option><option value="5">x5</option><option value="10">x10</option></select></label>
+        <div class="chance-preview"><div><span>CHANCE ESTIMÉE</span><strong id="chanceValue">47.5%</strong></div><div class="chance-track"><i style="width:47.5%"></i></div><small>La zone orange représente le résultat gagnant.</small></div>
+        <button class="cta wide" data-action="start-upgrade" ${state.inventory.length ? '' : 'disabled'}>Lancer l’upgrade</button>
+      </div>
+      <div class="upgrade-wheel-shell v7-dial-shell">
+        <div class="dial-head"><span>02</span><div><strong>Lecture du résultat</strong><small>Le cadran ne bouge jamais. Le cran blanc est le seul élément animé.</small></div></div>
+        <div class="upgrade-dial-preview" style="--chance:171deg">
+          <div class="dial-scale"></div><div class="dial-zone-label win">WIN</div><div class="dial-zone-label lose">LOSE</div>
+          <div class="dial-needle preview"><i></i></div><div class="dial-hub"><span>DF</span><small>V7</small></div>
+        </div>
+        <div class="dial-legend"><span><i class="win-dot"></i> Zone gagnante</span><span><i class="lose-dot"></i> Zone perdante</span></div>
+      </div>
+    </div>
   </section>`;
 }
 function renderHistory() {
@@ -307,14 +331,14 @@ function profileMenu() {
 function caseModal(caseDef) {
   state.selectedCase = caseDef;
   state.quantity = 1;
-  modal(`<div class="case-modal" style="--accent:${caseDef.accent}"><button class="modal-close" data-close-modal>×</button><div class="case-modal-head"><img src="${caseDef.image}" alt=""><div><span>${esc(caseDef.tag)}</span><h2>${esc(caseDef.name)}</h2><p>${caseDef.items.length} gains · jackpot ${money(Math.max(...caseDef.items.map(i=>i.value)))} CR</p></div></div><div class="qty-buttons">${[1,3,5,10].map(q=>`<button class="${q===1?'active':''}" data-qty="${q}">x${q}</button>`).join('')}</div><div class="case-contents">${caseDef.items.slice().sort((a,b)=>b.value-a.value).map((it)=>`<div style="--r:${rarityColor[it.rarity]}"><img src="${it.image}" alt=""><span>${esc(it.weapon)} · ${esc(it.name)}</span><b>${money(it.value)} CR</b></div>`).join('')}</div><button class="cta wide open-case-button" data-action="confirm-open">Ouvrir x1 · ${money(caseDef.price)} CR</button></div>`, 'case-modal-wrap');
+  modal(`<div class="case-modal v7-case-modal" style="--accent:${caseDef.accent}"><button class="modal-close" data-close-modal>×</button><div class="case-modal-head"><img src="${caseDef.image}" alt=""><div><span>${esc(caseDef.tag)}</span><h2>${esc(caseDef.name)}</h2><p>${caseDef.items.length} gains · jackpot ${money(Math.max(...caseDef.items.map(i=>i.value)))} CR</p></div></div><div class="modal-section-label"><span>QUANTITÉ</span><small>Une roulette indépendante par caisse</small></div><div class="qty-buttons">${[1,3,5,10].map(q=>`<button class="${q===1?'active':''}" data-qty="${q}">x${q}</button>`).join('')}</div><div class="modal-section-label"><span>CONTENU DE LA CAISSE</span><small>Valeurs de base avant état et StatTrak</small></div><div class="case-contents">${caseDef.items.slice().sort((a,b)=>b.value-a.value).map((it)=>`<div style="--r:${rarityColor[it.rarity]}"><img src="${it.image}" alt=""><span>${esc(it.weapon)} · ${esc(it.name)}</span><b>${money(it.value)} CR</b></div>`).join('')}</div><button class="cta wide open-case-button" data-action="confirm-open">Ouvrir x1 · ${money(caseDef.price)} CR</button></div>`, 'case-modal-wrap');
 }
 function openingModal(caseDef, result) {
   const rows = result.items.map((winner,index) => {
     const reel = Array.from({length:26},(_,i)=>i===22?winner:caseDef.items[Math.floor(Math.random()*caseDef.items.length)]);
     return `<div class="reel-line" data-reel-line="${index}"><span class="reel-label">CAISSE ${index+1}</span><div class="reel-window"><div class="reel-pointer"></div><div class="reel-track">${reel.map((it)=>`<div class="reel-item" style="--r:${rarityColor[it.rarity] || '#999'}"><img src="${it.image}" alt=""><strong>${esc(it.name)}</strong><small>${money(it.value)} CR</small></div>`).join('')}</div></div><div class="line-result"></div></div>`;
   }).join('');
-  modal(`<div class="opening-modal" style="--accent:${caseDef.accent}"><div class="opening-title"><span>OPENING x${result.items.length}</span><h2>${esc(caseDef.name)}</h2><p>Chaque ligne correspond à une caisse indépendante.</p></div><div class="multi-reels">${rows}</div><div class="opening-summary hidden" id="openingSummary"><div><small>COÛT</small><b>${money(result.cost)} CR</b></div><div><small>VALEUR</small><b>${money(result.total)} CR</b></div><div><small>RÉSULTAT</small><b class="${result.profit>=0?'good':'bad'}">${result.profit>=0?'+':''}${money(result.profit)} CR</b></div><button class="cta" data-close-modal>Continuer</button></div></div>`, 'opening-wrap');
+  modal(`<div class="opening-modal v7-opening-modal" style="--accent:${caseDef.accent}"><div class="opening-title"><span>DROP SESSION · x${result.items.length}</span><h2>${esc(caseDef.name)}</h2><p>Chaque ligne tourne indépendamment et conserve son reveal.</p></div><div class="multi-reels">${rows}</div><div class="opening-summary hidden" id="openingSummary"><div><small>COÛT</small><b>${money(result.cost)} CR</b></div><div><small>VALEUR</small><b>${money(result.total)} CR</b></div><div><small>RÉSULTAT</small><b class="${result.profit>=0?'good':'bad'}">${result.profit>=0?'+':''}${money(result.profit)} CR</b></div><button class="cta" data-close-modal>Continuer</button></div></div>`, 'opening-wrap');
   requestAnimationFrame(() => requestAnimationFrame(() => {
     const lines = [...document.querySelectorAll('[data-reel-line]')];
     lines.forEach((line,index) => {
@@ -441,11 +465,32 @@ async function handleClick(event) {
   if(ban){const u=state.admin.users.find(x=>x.id===ban.dataset.adminBan);try{await api(`/admin/users/${u.id}`,{method:'PATCH',body:{banned:!u.banned}});toast('Compte mis à jour','good');await loadAdmin();}catch(e){toast(e.message,'bad');}return;}
 }
 function showUpgradeResult(result,multiplier){
-  const chance=result.chance;
-  modal(`<div class="upgrade-result-modal"><span class="eyebrow">UPGRADE x${multiplier}</span><h2>La roue tourne…</h2><div class="result-wheel" style="--chance:${chance*3.6}deg"><div class="result-win-zone"></div><div class="result-pointer"></div><div class="result-center">DF</div></div><div class="upgrade-reveal hidden" id="upgradeReveal"></div></div>`,'upgrade-result-wrap');
-  const wheel=document.querySelector('.result-wheel');
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{wheel.style.transform=`rotate(${1440 + (result.success?chance*1.7:chance*3.6+80)}deg)`;}));
-  setTimeout(()=>{const root=document.getElementById('upgradeReveal');if(!root)return;root.classList.remove('hidden');root.classList.add(result.success?'good':'bad');root.innerHTML=result.success?`<strong>WIN · UPGRADE RÉUSSI</strong>${itemCard(result.result,true)}<button class="cta" data-close-modal>Continuer</button>`:`<strong>LOSE · OBJET PERDU</strong><p>${esc(result.source.weapon)} · ${esc(result.source.name)}</p><button class="ghost" data-close-modal>Continuer</button>`;},6500);
+  const chance=Math.max(1,Math.min(95,Number(result.chance)||0));
+  const chanceDeg=chance*3.6;
+  const duration=9800;
+  const successTarget=Math.max(5,chanceDeg*0.58);
+  const failTarget=chanceDeg+Math.max(12,(360-chanceDeg)*0.55);
+  const landing=result.success?successTarget:Math.min(356,failTarget);
+  const finalRotation=1800+landing;
+  modal(`<div class="upgrade-result-modal v7-upgrade-result" style="--chance:${chanceDeg}deg;--duration:${duration}ms"><div class="result-topline"><span>UPGRADE x${multiplier}</span><b>${chance.toFixed(1)}% DE CHANCE</b></div><h2 id="upgradeStatus">Le cran est lancé</h2><p>Le cadran reste fixe pendant toute l’animation.</p><div class="result-dial"><div class="dial-scale"></div><div class="dial-zone-label win">WIN</div><div class="dial-zone-label lose">LOSE</div><div class="result-needle" id="resultNeedle"><i></i></div><div class="dial-hub"><span>DF</span><small>LIVE</small></div><div class="dial-scan"></div></div><div class="result-progress"><i></i></div><div class="upgrade-reveal hidden" id="upgradeReveal"></div></div>`,'upgrade-result-wrap');
+  const needle=document.getElementById('resultNeedle');
+  const status=document.getElementById('upgradeStatus');
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    needle.style.transform=`rotate(${finalRotation}deg)`;
+    document.querySelector('.v7-upgrade-result')?.classList.add('running');
+  }));
+  setTimeout(()=>{if(status)status.textContent='Dernier ralentissement…';},duration-2600);
+  setTimeout(()=>{
+    const root=document.getElementById('upgradeReveal');
+    const modalRoot=document.querySelector('.v7-upgrade-result');
+    if(!root)return;
+    modalRoot?.classList.add(result.success?'is-win':'is-lose');
+    if(status)status.textContent=result.success?'WIN · Upgrade réussi':'LOSE · Objet perdu';
+    root.classList.remove('hidden');
+    root.classList.add(result.success?'good':'bad');
+    root.innerHTML=result.success?`<strong>GAIN CONFIRMÉ</strong>${itemCard(result.result,true)}<button class="cta" data-close-modal>Continuer</button>`:`<strong>UPGRADE MANQUÉ</strong><p>${esc(result.source.weapon)} · ${esc(result.source.name)}</p><button class="ghost" data-close-modal>Continuer</button>`;
+    root.querySelectorAll('[data-close-modal]').forEach((button)=>button.addEventListener('click',(event)=>{event.preventDefault();closeModal();}));
+  },duration+180);
 }
 
 document.addEventListener('click', handleClick);

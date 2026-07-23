@@ -1,9 +1,9 @@
 {
   "name": "dropforge-discord-activity",
-  "version": "1.0.3",
+  "version": "1.7.0",
   "private": true,
   "type": "module",
-  "description": "DropForge Discord Activity + bot demo with fictitious credits only",
+  "description": "DropForge Discord Activity V7 — premium case opening demo with fictitious credits only",
   "scripts": {
     "dev": "concurrently -k -n CLIENT,SERVER -c cyan,magenta \"vite --host 0.0.0.0\" \"node --watch server/index.js\"",
     "build": "vite build",
