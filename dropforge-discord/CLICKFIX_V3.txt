@@ -1,0 +1,5 @@
+DropForge Discord ClickFix V3
+- direct listeners on every modal button
+- pointer/touch hardening
+- browser cache disabled
+- visible header marker: ACTIVITY · FIX 3
