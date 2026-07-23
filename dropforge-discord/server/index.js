@@ -24,7 +24,7 @@ import {
   createBattle,
   joinBattle,
   openCases,
-  runUpgrade,
+  runUpgrade, previewTradeUp, runTradeUp,
   sellAll,
   sellItem,
   startBattle,
@@ -223,7 +223,7 @@ app.get('/api/demo/users', (_req, res) => {
 
 app.get('/api/cases', (_req, res) => res.json({ cases: getState().cases.filter((c) => c.active !== false) }));
 app.get('/api/leaderboard', (_req, res) => {
-  const users = [...getState().users].filter((u) => !u.banned).sort((a, b) => b.balance - a.balance).slice(0, 20).map(publicUser);
+  const users = [...getState().users].filter((u) => !u.banned).sort((a, b) => (Number(b.xp)||0) - (Number(a.xp)||0) || b.balance - a.balance).slice(0, 20).map(publicUser);
   res.json({ users });
 });
 app.get('/api/battles', (_req, res) => res.json({ battles: getState().battles.slice(0, 30) }));
@@ -244,6 +244,19 @@ app.post('/api/inventory/sell-all', requireUser, (req, res) => {
   try { res.json(sellAll(req.user.id)); }
   catch (error) { res.status(400).json({ error: error.message }); }
 });
+
+app.post('/api/trade-up/preview', requireUser, (req, res) => {
+  try { res.json(previewTradeUp(req.user.id, req.body?.uids)); }
+  catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.post('/api/trade-up', requireUser, (req, res) => {
+  try {
+    const result = runTradeUp(req.user.id, req.body?.uids);
+    io.emit('user:update', { userId: req.user.id });
+    res.json(result);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+
 app.post('/api/upgrade', requireUser, (req, res) => {
   try { res.json(runUpgrade(req.user.id, req.body?.uid, req.body?.multiplier)); }
   catch (error) { res.status(400).json({ error: error.message }); }
@@ -323,6 +336,7 @@ app.patch('/api/admin/users/:id', requireAdmin, (req, res) => {
   if (!user) return res.status(404).json({ error: 'Utilisateur introuvable' });
   if (typeof req.body?.username === 'string') user.username = req.body.username.slice(0, 40);
   if (Number.isFinite(Number(req.body?.balance))) user.balance = Math.max(0, Number(req.body.balance));
+  if (Number.isFinite(Number(req.body?.xp))) user.xp = Math.max(0, Number(req.body.xp));
   if (typeof req.body?.banned === 'boolean') user.banned = req.body.banned;
   if (typeof req.body?.admin === 'boolean') user.admin = req.body.admin;
   audit('admin', `Compte modifié : ${user.username}`, req.user.id);
@@ -335,6 +349,9 @@ app.patch('/api/admin/settings', requireAdmin, (req, res) => {
   if (Number.isFinite(Number(req.body?.openingDurationMs))) settings.openingDurationMs = Math.max(1500, Number(req.body.openingDurationMs));
   if (Number.isFinite(Number(req.body?.upgradeDurationMs))) settings.upgradeDurationMs = Math.max(3000, Number(req.body.upgradeDurationMs));
   if (Number.isFinite(Number(req.body?.battleRoundDurationMs))) settings.battleRoundDurationMs = Math.max(2500, Number(req.body.battleRoundDurationMs));
+  for (const key of ['xpOpen','xpBattle','xpBattleWinBonus','xpUpgrade','xpTradeUp','xpDaily']) {
+    if (Number.isFinite(Number(req.body?.[key]))) settings[key] = Math.max(0, Number(req.body[key]));
+  }
   save();
   res.json(settings);
 });

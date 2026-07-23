@@ -1,0 +1,10 @@
+Skinova V1.3 — installation Railway
+
+1. Décompresse cette archive.
+2. Envoie tous les fichiers à la racine du dépôt GitHub Skinova.
+3. Accepte le remplacement et Commit changes.
+4. Attends le statut Active sur Railway.
+5. Ferme puis relance l’Activity Discord.
+6. Exécute une fois npm run register pour ajouter /tradeup et actualiser les commandes.
+
+Le patch ne contient pas data/db.json : comptes, soldes et inventaires sont conservés.

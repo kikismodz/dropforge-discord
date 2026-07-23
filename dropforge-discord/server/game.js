@@ -1,7 +1,9 @@
 import crypto from 'node:crypto';
-import { getState, save, audit, getUser } from './store.js';
+import { getState, save, audit, getUser, progressionFromXp } from './store.js';
 
 const wearKeys = ['FN', 'MW', 'FT', 'WW', 'BS'];
+const rarityOrder = ['consumer', 'industrial', 'mil-spec', 'restricted', 'classified', 'covert', 'gold'];
+const conditionFloat = { FN: 0.035, MW: 0.10, FT: 0.25, WW: 0.40, BS: 0.65 };
 const MAX_52 = 0xFFFFFFFFFFFFF;
 
 function sha256Hex(value) {
@@ -105,6 +107,7 @@ export function rollCase(caseId, fairUser, context = `case:${caseId}`) {
   const proof = fairRoll(fairUser, context);
   const definition = pickWeighted(caseDef.items, proof.roll);
   const item = materialize(definition, proof.wearRoll, proof.stattrakRoll);
+  item.caseId = caseDef.id;
   proof.itemId = definition.id;
   proof.condition = item.condition;
   proof.stattrak = item.stattrak;
@@ -114,6 +117,112 @@ export function rollCase(caseId, fairUser, context = `case:${caseId}`) {
 function pushHistory(user, entry) {
   user.history.unshift({ id: crypto.randomUUID(), at: Date.now(), ...entry });
   if (user.history.length > 250) user.history.length = 250;
+}
+
+function awardXp(user, amount, reason = 'Activité') {
+  const gained = Math.max(0, Math.round(Number(amount) || 0));
+  const before = progressionFromXp(user.xp);
+  user.xp = Math.max(0, Number(user.xp) || 0) + gained;
+  const after = progressionFromXp(user.xp);
+  let reward = 0;
+  if (after.level > before.level) {
+    for (let level = before.level + 1; level <= after.level; level += 1) reward += 40 + level * 10;
+    user.balance += reward;
+    pushHistory(user, {
+      type: 'level', outcome: 'win', title: `Niveau ${after.level} atteint`,
+      detail: `${after.rank} · récompense de progression`, payout: reward, profit: reward,
+      xp: gained, items: [],
+    });
+  }
+  return { gained, before, after, reward, reason };
+}
+
+function wearFromFloat(value) {
+  if (value <= 0.07) return 'FN';
+  if (value <= 0.15) return 'MW';
+  if (value <= 0.38) return 'FT';
+  if (value <= 0.45) return 'WW';
+  return 'BS';
+}
+
+function uniqueDefinitionsForRarity(rarity, stattrak) {
+  const seen = new Set();
+  const result = [];
+  for (const caseDef of getState().cases) {
+    for (const item of caseDef.items || []) {
+      if (item.rarity !== rarity || seen.has(item.id)) continue;
+      if (stattrak && (!Number(item.stattrak) || String(item.weapon).toLowerCase().includes('glove'))) continue;
+      seen.add(item.id);
+      result.push({ ...item, caseId: caseDef.id, weight: 1 });
+    }
+  }
+  return result;
+}
+
+function validateTradeUp(user, uids) {
+  const ids = Array.isArray(uids) ? [...new Set(uids.map(String))] : [];
+  if (ids.length !== 10) throw new Error('Sélectionne exactement 10 objets');
+  const items = ids.map((uid) => user.inventory.find((entry) => entry.uid === uid));
+  if (items.some((entry) => !entry)) throw new Error('Un objet sélectionné est introuvable');
+  const rarity = items[0].rarity;
+  if (!items.every((entry) => entry.rarity === rarity)) throw new Error('Les 10 objets doivent avoir la même rareté');
+  const stattrak = Boolean(items[0].stattrak);
+  if (!items.every((entry) => Boolean(entry.stattrak) === stattrak)) throw new Error('Mélange StatTrak / non-StatTrak impossible');
+  const rarityIndex = rarityOrder.indexOf(rarity);
+  if (rarityIndex < 0 || rarityIndex >= rarityOrder.length - 1) throw new Error('Cette rareté ne peut pas être Trade Up');
+  const nextRarity = rarityOrder[rarityIndex + 1];
+  const candidates = uniqueDefinitionsForRarity(nextRarity, stattrak);
+  if (!candidates.length) throw new Error('Aucun gain disponible pour la rareté supérieure');
+  const averageFloat = items.reduce((sum, item) => sum + (conditionFloat[item.condition] ?? 0.25), 0) / items.length;
+  return { ids, items, rarity, nextRarity, stattrak, candidates, averageFloat };
+}
+
+export function previewTradeUp(userId, uids) {
+  const user = getUser(userId);
+  if (!user) throw new Error('Utilisateur introuvable');
+  const data = validateTradeUp(user, uids);
+  const chance = 100 / data.candidates.length;
+  return {
+    count: data.items.length, rarity: data.rarity, nextRarity: data.nextRarity,
+    stattrak: data.stattrak, averageCondition: wearFromFloat(data.averageFloat),
+    totalValue: data.items.reduce((sum, item) => sum + Number(item.value), 0),
+    candidates: data.candidates.map((item) => ({ id: item.id, weapon: item.weapon, name: item.name, rarity: item.rarity, image: item.image, value: Number(item.value), chance })),
+  };
+}
+
+export function runTradeUp(userId, uids) {
+  const user = getUser(userId);
+  if (!user) throw new Error('Utilisateur introuvable');
+  const data = validateTradeUp(user, uids);
+  const proof = fairRoll(user, `tradeup:${data.rarity}:${data.stattrak ? 'st' : 'normal'}:${data.ids.slice().sort().join(',')}`);
+  const target = data.candidates[Math.min(data.candidates.length - 1, Math.floor(proof.roll * data.candidates.length))];
+  const jitter = (proof.wearRoll - 0.5) * 0.06;
+  const condition = wearFromFloat(Math.max(0, Math.min(1, data.averageFloat + jitter)));
+  const mult = getState().settings.valueMultipliers || {};
+  const value = Number(target.value) * (Number(mult[condition]) || 1) * (data.stattrak ? Number(mult.ST) || 1 : 1);
+  const result = {
+    uid: crypto.randomUUID(), itemId: target.id, caseId: target.caseId,
+    weapon: target.weapon, name: target.name, rarity: target.rarity, image: target.image,
+    condition, stattrak: data.stattrak, baseValue: Number(target.value),
+    value: Math.round(value * 100) / 100, obtainedAt: Date.now(),
+  };
+  user.inventory = user.inventory.filter((entry) => !data.ids.includes(entry.uid));
+  user.inventory.unshift(result);
+  user.stats.tradeUps = Math.max(0, Number(user.stats.tradeUps) || 0) + 1;
+  const sourceValue = data.items.reduce((sum, item) => sum + Number(item.value), 0);
+  user.stats.profit += result.value - sourceValue;
+  const xp = awardXp(user, Number(getState().settings.xpTradeUp) || 150, 'Trade Up');
+  proof.itemId = target.id; proof.condition = condition; proof.stattrak = data.stattrak;
+  pushHistory(user, {
+    type: 'tradeup', outcome: result.value >= sourceValue ? 'win' : 'lose',
+    title: `Trade Up ${data.rarity} → ${data.nextRarity}`,
+    detail: `10 objets sacrifiés · ${result.weapon} · ${result.name}`,
+    cost: sourceValue, payout: result.value, profit: result.value - sourceValue,
+    items: [result], sourceItems: data.items, proofs: [proof], xp: xp.gained,
+  });
+  audit('tradeup', `${user.username} réalise un Trade Up ${data.rarity} → ${data.nextRarity}`, user.id);
+  save();
+  return { result, sourceItems: data.items, proof, sourceValue, profit: result.value - sourceValue, xp, progression: progressionFromXp(user.xp), nextServerHash: user.fair.serverHash };
 }
 
 export function openCases(userId, caseId, quantity) {
@@ -132,15 +241,16 @@ export function openCases(userId, caseId, quantity) {
   user.inventory.unshift(...items);
   user.stats.opens += qty;
   user.stats.profit += total - cost;
+  const xp = awardXp(user, (Number(getState().settings.xpOpen) || 8) * qty, 'Ouverture');
   pushHistory(user, {
     type: 'open', outcome: total >= cost ? 'win' : 'lose',
     title: `Ouverture x${qty} · ${caseDef.name}`,
     detail: `${items.length} gains · ${total.toFixed(2)} CR`,
-    cost, payout: total, profit: total - cost, items, proofs,
+    cost, payout: total, profit: total - cost, items, proofs, xp: xp.gained,
   });
   audit('open', `${user.username} ouvre ${caseDef.name} x${qty}`, user.id);
   save();
-  return { case: caseDef, items, proofs, cost, total, profit: total - cost, balance: user.balance, nextServerHash: user.fair.serverHash };
+  return { case: caseDef, items, proofs, cost, total, profit: total - cost, balance: user.balance, xp, progression: progressionFromXp(user.xp), nextServerHash: user.fair.serverHash };
 }
 
 export function sellItem(userId, uid) {
@@ -193,14 +303,15 @@ export function runUpgrade(userId, uid, multiplier) {
   user.stats.upgrades += 1;
   if (success) user.stats.upgradeWins += 1;
   user.stats.profit += (result?.value || 0) - source.value;
+  const xp = awardXp(user, Number(getState().settings.xpUpgrade) || 35, 'Upgrade');
   pushHistory(user, {
     type: 'upgrade', outcome: success ? 'win' : 'lose', title: success ? 'Upgrade réussi' : 'Upgrade perdu',
     detail: `${source.weapon} · ${source.name} → x${mult.toFixed(1)}`,
     cost: source.value, payout: result?.value || 0, profit: (result?.value || 0) - source.value,
-    items: result ? [result] : [source], chance: chance * 100, proofs: [proof],
+    items: result ? [result] : [source], chance: chance * 100, proofs: [proof], xp: xp.gained,
   });
   save();
-  return { success, chance: chance * 100, source, result, proof, balance: user.balance, nextServerHash: user.fair.serverHash };
+  return { success, chance: chance * 100, source, result, proof, xp, progression: progressionFromXp(user.xp), balance: user.balance, nextServerHash: user.fair.serverHash };
 }
 
 function botPlayer(index) {
@@ -274,12 +385,13 @@ export function startBattle(userId, battleId, fillBots = true) {
     user.stats.battles += 1;
     if (won) user.stats.battleWins += 1;
     user.stats.profit += (won ? prize : 0) - entryCost;
+    const xp = awardXp(user, (Number(getState().settings.xpBattle) || 70) + (won ? Number(getState().settings.xpBattleWinBonus) || 35 : 0), 'Battle');
     const playerItems = rounds.map((r) => r.drops.find((d) => d.playerId === player.id).item);
     pushHistory(user, {
       type: 'battle', outcome: won ? 'win' : 'lose', title: `${won ? 'Battle gagnée' : 'Battle perdue'} · ${caseDef.name}`,
       detail: `${battle.players.length} joueurs · ${battle.rounds} manches`, cost: entryCost,
       payout: won ? prize : 0, profit: (won ? prize : 0) - entryCost, items: playerItems,
-      battleId: battle.id, totals, winnerIds, proofs: rounds.map((r) => r.drops.find((d) => d.playerId === player.id).proof),
+      battleId: battle.id, totals, winnerIds, xp: xp.gained, proofs: rounds.map((r) => r.drops.find((d) => d.playerId === player.id).proof),
     });
   }
   battle.status = 'finished';
@@ -299,7 +411,8 @@ export function claimDaily(userId) {
   const amount = Number(getState().settings.dailyGift) || 100;
   user.balance += amount;
   user.lastDaily = Date.now();
-  pushHistory(user, { type: 'daily', outcome: 'win', title: 'Bonus quotidien', detail: `${amount} crédits fictifs`, payout: amount, profit: amount, items: [] });
+  const xp = awardXp(user, Number(getState().settings.xpDaily) || 25, 'Bonus quotidien');
+  pushHistory(user, { type: 'daily', outcome: 'win', title: 'Bonus quotidien', detail: `${amount} crédits fictifs`, payout: amount, profit: amount, xp: xp.gained, items: [] });
   save();
-  return { amount, balance: user.balance };
+  return { amount, xp, progression: progressionFromXp(user.xp), balance: user.balance };
 }

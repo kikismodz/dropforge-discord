@@ -54,11 +54,12 @@ export async function startDiscordBot({ token, publicUrl, io }) {
         if (interaction.commandName === 'skinova') {
           const embed = new EmbedBuilder()
             .setColor('#ff3d8d')
-            .setTitle('DROP⟡FORGE — Discord Activity')
-            .setDescription('Ouvre les caisses, participe aux battles et retrouve ton inventaire avec des crédits entièrement fictifs.')
+            .setTitle('SKINOVA — Discord Activity')
+            .setDescription('Ouvre les caisses, monte de niveau, réalise des Trade Ups et participe aux battles avec des crédits entièrement fictifs.')
             .addFields(
               { name: 'Solde', value: `${user.balance.toFixed(2)} CR`, inline: true },
               { name: 'Inventaire', value: `${user.inventory.length} objet(s)`, inline: true },
+              { name: 'Niveau', value: `${publicUser(user).level} · ${publicUser(user).rank}`, inline: true },
             );
           const components = publicUrl ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Lancer Skinova').setStyle(ButtonStyle.Link).setURL(publicUrl))] : [];
           await interaction.reply({ embeds: [embed], components, ephemeral: true });
@@ -66,7 +67,7 @@ export async function startDiscordBot({ token, publicUrl, io }) {
         }
         if (interaction.commandName === 'daily') {
           const result = claimDaily(user.id);
-          await interaction.reply({ content: `🎁 +${result.amount} CR fictifs. Nouveau solde : **${result.balance.toFixed(2)} CR**`, ephemeral: true });
+          await interaction.reply({ content: `🎁 +${result.amount} CR fictifs et +${result.xp?.gained || 0} XP. Niveau **${result.progression?.level || publicUser(user).level}**.`, ephemeral: true });
           return;
         }
         if (interaction.commandName === 'profile') {
@@ -75,9 +76,18 @@ export async function startDiscordBot({ token, publicUrl, io }) {
             { name: 'Solde', value: `${p.balance.toFixed(2)} CR`, inline: true },
             { name: 'Inventaire', value: `${p.inventoryCount}`, inline: true },
             { name: 'Battles gagnées', value: `${p.stats.battleWins || 0}/${p.stats.battles || 0}`, inline: true },
+            { name: 'Niveau', value: `${p.level} · ${p.rank}`, inline: true },
+            { name: 'XP', value: `${p.xp}`, inline: true },
+            { name: 'Trade Ups', value: `${p.stats.tradeUps || 0}`, inline: true },
           );
           if (p.avatar) profileEmbed.setThumbnail(p.avatar);
           await interaction.reply({ embeds: [profileEmbed], ephemeral: true });
+          return;
+        }
+        if (interaction.commandName === 'tradeup') {
+          const url = publicUrl ? `${publicUrl.replace(/\/$/, '')}/?screen=tradeup` : '';
+          const components = url ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Ouvrir le Trade Up').setStyle(ButtonStyle.Link).setURL(url))] : [];
+          await interaction.reply({ content: '⇧ Sélectionne 10 objets de même rareté dans le Trade Up Skinova.', components, ephemeral: true });
           return;
         }
         if (interaction.commandName === 'cases') {
@@ -86,8 +96,8 @@ export async function startDiscordBot({ token, publicUrl, io }) {
           return;
         }
         if (interaction.commandName === 'leaderboard') {
-          const users = [...getState().users].filter((u) => !u.banned).sort((a, b) => b.balance - a.balance).slice(0, 10);
-          await interaction.reply({ embeds: [new EmbedBuilder().setColor('#ffc447').setTitle('🏆 Classement Skinova').setDescription(users.map((u, i) => `**${i + 1}. ${u.username}** — ${u.balance.toFixed(2)} CR`).join('\n'))] });
+          const users = [...getState().users].filter((u) => !u.banned).sort((a, b) => (Number(b.xp)||0) - (Number(a.xp)||0) || b.balance - a.balance).slice(0, 10);
+          await interaction.reply({ embeds: [new EmbedBuilder().setColor('#ffc447').setTitle('🏆 Classement Skinova').setDescription(users.map((u, i) => `**${i + 1}. ${u.username}** — Niv. ${publicUser(u).level} · ${publicUser(u).xp} XP`).join('\n'))] });
           return;
         }
         if (interaction.commandName === 'battle') {

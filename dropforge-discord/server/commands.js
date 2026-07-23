@@ -2,6 +2,7 @@ import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 
 export const commandData = [
   new SlashCommandBuilder().setName('skinova').setDescription('Ouvrir Skinova Activity'),
+  new SlashCommandBuilder().setName('tradeup').setDescription('Ouvrir directement le Trade Up Skinova'),
   new SlashCommandBuilder().setName('daily').setDescription('Récupérer les crédits fictifs quotidiens'),
   new SlashCommandBuilder().setName('profile').setDescription('Afficher ton profil Skinova'),
   new SlashCommandBuilder().setName('cases').setDescription('Afficher les caisses actives'),

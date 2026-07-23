@@ -4,6 +4,8 @@ const insideDiscord = qs.has('frame_id') || qs.has('instance_id');
 const apiBase = insideDiscord ? '/.proxy/api' : '/api';
 const socketPath = insideDiscord ? '/.proxy/socket.io' : '/socket.io';
 const rarityColor = { consumer:'#9aa3b8', industrial:'#58a6ff', 'mil-spec':'#536dff', restricted:'#a95cff', classified:'#ff4fb2', covert:'#ff4b55', gold:'#ffc447' };
+const rarityOrder = ['consumer','industrial','mil-spec','restricted','classified','covert','gold'];
+const rarityLabel = { consumer:'Consumer', industrial:'Industrial', 'mil-spec':'Mil-Spec', restricted:'Restricted', classified:'Classified', covert:'Covert', gold:'Gold' };
 
 const state = {
   config: null,
@@ -24,10 +26,34 @@ const state = {
   fairData: null,
   lastProofs: [],
   loading: true,
+  tradeSelection: [],
 };
 
 function money(value) {
   return Number(value || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function progression(user = state.user) {
+  return {
+    level: Math.max(1, Number(user?.level) || 1),
+    rank: String(user?.rank || 'Recrue'),
+    xp: Math.max(0, Number(user?.xp) || 0),
+    xpIntoLevel: Math.max(0, Number(user?.xpIntoLevel) || 0),
+    xpForNext: Math.max(0, Number(user?.xpForNext) || 0),
+    progress: Math.max(0, Math.min(100, Number(user?.progress) || 0)),
+  };
+}
+function nextRarity(rarity) {
+  const index = rarityOrder.indexOf(rarity);
+  return index >= 0 && index < rarityOrder.length - 1 ? rarityOrder[index + 1] : null;
+}
+function tradeSelectedItems() {
+  const ids = new Set(state.tradeSelection || []);
+  return state.inventory.filter((item) => ids.has(item.uid));
+}
+function tradeCompatible(item, selected = tradeSelectedItems()) {
+  if (!item || item.rarity === 'gold') return false;
+  if (!selected.length) return true;
+  return item.rarity === selected[0].rarity && Boolean(item.stattrak) === Boolean(selected[0].stattrak);
 }
 function upgradeChancePercent(multiplier) {
   const mult = Math.max(1.01, Number(multiplier) || 2);
@@ -158,7 +184,7 @@ function modal(html, cls = '') {
     if (event.target === backdrop) closeModal();
   });
 }
-function closeModal() { document.getElementById('modalRoot').innerHTML = ''; if (state.user && ['inventory','upgrade'].includes(state.active)) renderMain(); }
+function closeModal() { document.getElementById('modalRoot').innerHTML = ''; if (state.user && ['inventory','upgrade','tradeup'].includes(state.active)) renderMain(); }
 
 async function initDiscord() { state.config = await api('/config'); }
 
@@ -195,9 +221,8 @@ function connectSocket() {
   setInterval(async()=>{try{const p=await api('/battles');state.battles=p.battles||[];if(state.active==='battles')renderMain();}catch{}},5000);
 }
 function renderLoading() {
-  document.getElementById('app').innerHTML = `<div class="loading-screen"><div class="logo-mark pulse">SV</div><strong>SKINOVA</strong><small>Chargement de Skinova V1.1…</small></div>`;
+  document.getElementById('app').innerHTML = `<div class="loading-screen"><div class="logo-mark pulse">SV</div><strong>SKINOVA</strong><small>Chargement de Skinova V1.3…</small></div>`;
 }
-
 function navButton(id, icon, label) {
   const adminLocked = id === 'admin' && !state.user?.admin;
   return `<button class="nav-item ${state.active === id ? 'active' : ''} ${adminLocked ? 'locked' : ''}" data-nav="${id}" ${adminLocked ? 'disabled' : ''}><span>${icon}</span><b>${label}</b></button>`;
@@ -208,11 +233,11 @@ function render() {
       <aside class="skinova-sidebar">
         <div class="skinova-brand" data-nav="home">
           <span class="skinova-emblem"><i></i></span>
-          <div><strong>SKINOVA</strong><small>DISCORD ACTIVITY · V1.1</small></div>
+          <div><strong>SKINOVA</strong><small>DISCORD ACTIVITY · V1.3</small></div>
         </div>
         <div class="skinova-user-mini">
           ${avatar(state.user,'small')}
-          <div><strong>${esc(state.user.username)}</strong><small>Niveau ${Math.max(1,Math.floor((state.user.stats.opens||0)/10)+1)} · ${insideDiscord?'Discord connecté':'Aperçu local'}</small></div>
+          <div><strong>${esc(state.user.username)}</strong><small>${esc(progression().rank)} · Niveau ${progression().level}</small><span class="user-xp-mini"><i style="width:${progression().progress}%"></i></span></div>
           <i class="online-dot"></i>
         </div>
         <nav class="skinova-nav">
@@ -220,6 +245,7 @@ function render() {
           ${navButton('home','⌂','Accueil')}
           ${navButton('cases','▣','Caisses')}
           ${navButton('inventory','▦','Inventaire')}
+          ${navButton('tradeup','⇧','Trade Up')}
           ${navButton('battles','⚔','Battles')}
           ${navButton('upgrade','↗','Améliorateur')}
           <div class="nav-group-label">COMMUNAUTÉ</div>
@@ -244,34 +270,31 @@ function render() {
           </div>
         </header>
         <main class="skinova-main" id="mainStage"></main>
-        <footer class="skinova-statusbar"><span><i></i> ${state.presence.length || 1} MEMBRE(S) EN LIGNE</span><b>ÉVÉNEMENT · DROP HEAT ACTIF</b><span>SKINOVA V1.1 · CRÉDITS FICTIFS</span></footer>
+        <footer class="skinova-statusbar"><span><i></i> ${state.presence.length || 1} MEMBRE(S) EN LIGNE</span><b>ÉVÉNEMENT · DROP HEAT ACTIF</b><span>SKINOVA V1.3 · CRÉDITS FICTIFS</span></footer>
       </section>
       <nav class="skinova-mobile-nav">
-        ${navButton('home','⌂','Accueil')}${navButton('cases','▣','Caisses')}${navButton('battles','⚔','Battles')}${navButton('upgrade','↗','Upgrade')}${navButton('inventory','▦','Inventaire')}
+        ${navButton('home','⌂','Accueil')}${navButton('cases','▣','Caisses')}${navButton('inventory','▦','Inventaire')}${navButton('tradeup','⇧','Trade Up')}${navButton('battles','⚔','Battles')}${navButton('upgrade','↗','Upgrade')}
       </nav>
     </div>
     <div id="modalRoot"></div><div id="toastRoot"></div>`;
   renderMain();
   renderPresence();
 }
-
 function renderPresence() {
   const title = document.getElementById('screenTitle');
   if (title) {
-    const labels={home:'Accueil',cases:'Caisses',inventory:'Inventaire',battles:'Case Battles',upgrade:'Améliorateur',history:'Historique',leaderboard:'Classement',admin:'Skinova Control'};
+    const labels={home:'Accueil',cases:'Caisses',inventory:'Inventaire',tradeup:'Trade Up',battles:'Case Battles',upgrade:'Améliorateur',history:'Historique',leaderboard:'Classement',admin:'Skinova Control'};
     title.textContent=labels[state.active]||'Skinova';
   }
 }
-
 function renderMain() {
   const root = document.getElementById('mainStage');
   if (!root) return;
-  const views = { home: renderHome, cases: renderCases, inventory: renderInventory, battles: renderBattles, upgrade: renderUpgrade, history: renderHistory, leaderboard: renderLeaderboard, admin: renderAdmin };
+  const views = { home: renderHome, cases: renderCases, inventory: renderInventory, tradeup: renderTradeUp, battles: renderBattles, upgrade: renderUpgrade, history: renderHistory, leaderboard: renderLeaderboard, admin: renderAdmin };
   root.innerHTML = (views[state.active] || renderHome)();
   root.scrollTop = 0;
   renderPresence();
 }
-
 function renderHome() {
   const featured = state.cases.find((c) => c.id === 'ak-legends') || state.cases[0];
   const reel = featured?.items?.slice().sort((a,b)=>Number(b.value)-Number(a.value)).slice(0,5) || [];
@@ -312,10 +335,9 @@ function renderHome() {
         <section><header><span>🏆</span><h3>MEILLEURS GAINS</h3></header>${best.map((it,index)=>`<div class="top-gain"><i>${index+1}</i><img src="${it.image}" alt=""><div><strong>${esc(it.weapon)} | ${esc(it.name)}</strong><small>${esc(it.rarity.toUpperCase())}</small></div><b>◆ ${money(it.value)}</b></div>`).join('')}</section>
       </aside>
     </div>
-    <div class="skinova-trustbar"><span><i>✓</i><div><strong>PAIEMENTS FICTIFS</strong><small>Aucune monnaie réelle</small></div></span><span><i>⚡</i><div><strong>ANIMATIONS LIVE</strong><small>Ouvertures et battles</small></div></span><span><i>◇</i><div><strong>ÉQUITABLE & VÉRIFIÉ</strong><small>Système provably fair</small></div></span><span><i>♛</i><div><strong>PLUS TU JOUES</strong><small>Plus tu progresses</small></div></span></div>
+    <div class="skinova-trustbar"><span><i>✓</i><div><strong>PAIEMENTS FICTIFS</strong><small>Aucune monnaie réelle</small></div></span><span><i>⚡</i><div><strong>ANIMATIONS LIVE</strong><small>Ouvertures et battles</small></div></span><span><i>◇</i><div><strong>ÉQUITABLE & VÉRIFIÉ</strong><small>Système provably fair</small></div></span><span><i>♛</i><div><strong>NIVEAU ${progression().level} · ${esc(progression().rank)}</strong><small>${progression().xpForNext ? `${progression().xpIntoLevel}/${progression().xpForNext} XP` : 'Niveau maximum'}</small></div></span></div>
   </section>`;
 }
-
 function renderCases() {
   return `<section class="skinova-page cases-page">
     <div class="skinova-page-head"><div><span>COLLECTION SKINOVA</span><h1>Choisis ta caisse</h1><p>Chaque caisse possède son propre univers, ses probabilités et son jackpot.</p></div><div class="page-head-actions"><button class="skinova-secondary active">TOUTES</button><button class="skinova-secondary">ARMES</button><button class="skinova-secondary">PREMIUM</button></div></div>
@@ -334,7 +356,7 @@ function caseCard(c) {
 
 function renderInventory() {
   const total = state.inventory.reduce((sum, item) => sum + Number(item.value), 0);
-  return `<section class="view inventory-view-v11"><div class="page-head"><div><span class="eyebrow">LOCKER</span><h1>Ton inventaire</h1><p>Clique sur une arme pour la vendre ou l’envoyer dans l’améliorateur.</p></div><div class="summary-card"><small>VALEUR TOTALE</small><strong>${money(total)} CR</strong><button data-action="sell-all" ${state.inventory.length ? '' : 'disabled'}>Tout revendre à 100 %</button></div></div>
+  return `<section class="view inventory-view-v11"><div class="page-head"><div><span class="eyebrow">LOCKER</span><h1>Ton inventaire</h1><p>Clique sur une arme pour la vendre, l’améliorer ou l’ajouter à un Trade Up.</p><button class="skinova-secondary inventory-tradeup-shortcut" data-nav="tradeup">⇧ Ouvrir le Trade Up</button></div><div class="summary-card"><small>VALEUR TOTALE</small><strong>${money(total)} CR</strong><button data-action="sell-all" ${state.inventory.length ? '' : 'disabled'}>Tout revendre à 100 %</button></div></div>
     ${state.inventory.length ? `<div class="inventory-grid-v11">${state.inventory.map(inventoryTile).join('')}</div>` : empty('▦','Inventaire vide','Ouvre une caisse ou gagne une battle pour récupérer des objets.')}
   </section>`;
 }
@@ -349,7 +371,34 @@ function itemCard(item, compact = false) {
 function inventoryItemModal(item) {
   if (!item) return;
   const title = `${item.stattrak ? 'StatTrak™ ' : ''}${item.weapon} · ${item.name}`;
-  modal(`<div class="inventory-item-modal-v11" style="--rarity:${rarityColor[item.rarity] || '#999'}"><button class="modal-close" data-close-modal>×</button><span class="eyebrow">${esc(item.rarity.toUpperCase())}</span><div class="inventory-modal-art-v11"><img src="${item.image}" alt="${esc(title)}"></div><h2>${esc(title)}</h2><div class="inventory-modal-meta-v11"><span>${esc(item.condition || '')}</span>${item.stattrak ? '<span>StatTrak™</span>' : ''}<b>${money(item.value)} CR</b></div><div class="inventory-modal-actions-v11"><button class="ghost" data-action="inventory-upgrade" data-item-uid="${esc(item.uid)}">Améliorer</button><button class="cta" data-action="inventory-sell" data-item-uid="${esc(item.uid)}">Vendre à 100 %</button></div></div>`, 'inventory-item-wrap-v11');
+  modal(`<div class="inventory-item-modal-v11" style="--rarity:${rarityColor[item.rarity] || '#999'}"><button class="modal-close" data-close-modal>×</button><span class="eyebrow">${esc(item.rarity.toUpperCase())}</span><div class="inventory-modal-art-v11"><img src="${item.image}" alt="${esc(title)}"></div><h2>${esc(title)}</h2><div class="inventory-modal-meta-v11"><span>${esc(item.condition || '')}</span>${item.stattrak ? '<span>StatTrak™</span>' : ''}<b>${money(item.value)} CR</b></div><div class="inventory-modal-actions-v11">${item.rarity!=='gold'?`<button class="ghost" data-action="inventory-tradeup" data-item-uid="${esc(item.uid)}">Trade Up</button>`:'<button class="ghost" disabled>Trade Up indisponible</button>'}<button class="ghost" data-action="inventory-upgrade" data-item-uid="${esc(item.uid)}">Améliorer</button><button class="cta" data-action="inventory-sell" data-item-uid="${esc(item.uid)}">Vendre à 100 %</button></div></div>`, 'inventory-item-wrap-v11');
+}
+function renderTradeUp() {
+  state.tradeSelection = (state.tradeSelection || []).filter((uid) => state.inventory.some((item) => item.uid === uid));
+  const selected = tradeSelectedItems();
+  const anchor = selected[0] || null;
+  const targetRarity = anchor ? nextRarity(anchor.rarity) : null;
+  const totalValue = selected.reduce((sum,item)=>sum+Number(item.value||0),0);
+  const candidates = targetRarity ? [...new Map(state.cases.flatMap((c)=>c.items || []).filter((item)=>item.rarity===targetRarity && (!anchor?.stattrak || Number(item.stattrak)>0) && !(anchor?.stattrak && String(item.weapon).toLowerCase().includes('glove'))).map((item)=>[item.id,item])).values()] : [];
+  const chance = candidates.length ? 100/candidates.length : 0;
+  const eligible = state.inventory.filter((item)=>item.rarity!=='gold');
+  return `<section class="view tradeup-view"><div class="page-head"><div><span class="eyebrow">CONTRAT SKINOVA</span><h1>Trade Up</h1><p>Sacrifie exactement 10 objets de même rareté et même statut StatTrak pour obtenir un objet de la rareté supérieure.</p></div><button class="v7-status-pill" data-action="fair-center"><i></i> TIRAGE VÉRIFIABLE</button></div>
+    <div class="tradeup-layout">
+      <section class="tradeup-builder"><div class="tradeup-builder-head"><div><small>SÉLECTION</small><h2>${selected.length} / 10 objets</h2></div><button class="skinova-secondary" data-action="tradeup-clear" ${selected.length?'':'disabled'}>Vider</button></div>
+        <div class="tradeup-contract-slots">${Array.from({length:10},(_,index)=>{const item=selected[index];return item?`<button class="tradeup-slot filled" data-trade-select="${item.uid}" style="--rarity:${rarityColor[item.rarity]}"><img src="${item.image}" alt=""><span>${esc(item.name)}</span><i>×</i></button>`:`<span class="tradeup-slot empty"><b>${index+1}</b><small>OBJET</small></span>`;}).join('')}</div>
+        <div class="tradeup-summary"><span><small>RARETÉ SOURCE</small><b>${anchor?esc(rarityLabel[anchor.rarity]):'—'}</b></span><i>→</i><span><small>GAIN POSSIBLE</small><b>${targetRarity?esc(rarityLabel[targetRarity]):'—'}</b></span><span><small>VALEUR SACRIFIÉE</small><b>${money(totalValue)} CR</b></span><span><small>TYPE</small><b>${anchor?.stattrak?'StatTrak™':'Standard'}</b></span></div>
+        <button class="skinova-primary wide tradeup-submit" data-action="tradeup-submit" ${selected.length===10?'':'disabled'}>SIGNER LE CONTRAT · 10 / 10</button>
+      </section>
+      <aside class="tradeup-outcomes"><div class="panel-head"><div><small>RÉSULTATS POSSIBLES</small><h2>${candidates.length || 0} skins</h2></div><b>${chance?chance.toFixed(2):'0.00'} % chacun</b></div><div class="tradeup-outcome-grid">${candidates.slice(0,18).map((item)=>`<article style="--rarity:${rarityColor[item.rarity]}"><img src="${item.image}" alt=""><div><strong>${esc(item.weapon)} · ${esc(item.name)}</strong><small>${money(item.value)} CR · ${chance.toFixed(2)}%</small></div></article>`).join('') || '<p class="muted">Sélectionne un premier objet pour voir les résultats possibles.</p>'}</div></aside>
+    </div>
+    <div class="section-heading"><div><span class="eyebrow">TON INVENTAIRE</span><h2>Objets compatibles</h2></div><small class="tradeup-rule">Les objets Gold ne peuvent pas être améliorés.</small></div>
+    ${eligible.length?`<div class="tradeup-inventory">${eligible.map((item)=>{const active=state.tradeSelection.includes(item.uid),compatible=tradeCompatible(item,selected);return `<button class="tradeup-inventory-item ${active?'selected':''} ${compatible?'':'incompatible'}" data-trade-select="${item.uid}" ${compatible||active?'':'disabled'} style="--rarity:${rarityColor[item.rarity]}"><span><img src="${item.image}" alt=""></span><strong>${esc(item.weapon)} · ${esc(item.name)}</strong><small>${esc(item.condition)}${item.stattrak?' · ST™':''}</small><b>${money(item.value)} CR</b></button>`;}).join('')}</div>`:empty('⇧','Aucun objet compatible','Ouvre des caisses pour obtenir des objets utilisables dans un Trade Up.')}
+  </section>`;
+}
+function showTradeUpResult(result) {
+  state.lastProofs = result.proof ? [result.proof] : [];
+  const item=result.result;
+  modal(`<div class="tradeup-result-modal" style="--rarity:${rarityColor[item.rarity]||'#ff9a1f'}"><button class="modal-close" data-close-modal>×</button><span class="eyebrow">CONTRAT TERMINÉ</span><h2>${result.profit>=0?'TRADE UP POSITIF':'NOUVEAU SKIN OBTENU'}</h2><div class="tradeup-result-art"><i></i><img src="${item.image}" alt=""></div><strong>${esc(item.stattrak?'StatTrak™ ':'')}${esc(item.weapon)} · ${esc(item.name)}</strong><div class="badges"><span>${esc(item.condition)}</span><span>${esc(rarityLabel[item.rarity]||item.rarity)}</span></div><div class="tradeup-result-values"><span><small>SACRIFIÉ</small><b>${money(result.sourceValue)} CR</b></span><span><small>GAIN</small><b>${money(item.value)} CR</b></span><span><small>RÉSULTAT</small><b class="${result.profit>=0?'good':'bad'}">${result.profit>=0?'+':''}${money(result.profit)} CR</b></span></div><p>+${result.xp?.gained||0} XP · Niveau ${result.progression?.level||state.user.level}</p><div class="reveal-actions"><button class="ghost" data-action="verify-last-proof" data-proof-index="0">Vérifier le tirage</button><button class="cta" data-close-modal>Continuer</button></div></div>`, 'tradeup-result-wrap');
 }
 function renderBattles() {
   const open = state.battles.filter((b) => b.status === 'waiting');
@@ -397,15 +446,15 @@ function renderHistory() {
   const wins = state.history.filter((e) => e.outcome === 'win').length;
   const losses = state.history.filter((e) => e.outcome === 'lose').length;
   const profit = state.history.reduce((sum,e)=>sum+Number(e.profit || 0),0);
-  return `<section class="view"><div class="page-head"><div><span class="eyebrow">ACTIVITY LOG</span><h1>Historique & statistiques</h1><p>Toutes tes ouvertures, battles, reventes et upgrades.</p></div></div><div class="metrics-grid"><div><small>RÉSULTAT NET</small><strong class="${profit>=0?'good':'bad'}">${profit>=0?'+':''}${money(profit)} CR</strong></div><div><small>WIN / LOSE</small><strong>${wins} / ${losses}</strong></div><div><small>BATTLES</small><strong>${state.user.stats.battleWins || 0}/${state.user.stats.battles || 0}</strong></div><div><small>UPGRADES</small><strong>${state.user.stats.upgradeWins || 0}/${state.user.stats.upgrades || 0}</strong></div></div>
+  return `<section class="view"><div class="page-head"><div><span class="eyebrow">ACTIVITY LOG</span><h1>Historique & statistiques</h1><p>Toutes tes ouvertures, battles, reventes, upgrades et Trade Ups.</p></div></div><div class="metrics-grid"><div><small>RÉSULTAT NET</small><strong class="${profit>=0?'good':'bad'}">${profit>=0?'+':''}${money(profit)} CR</strong></div><div><small>WIN / LOSE</small><strong>${wins} / ${losses}</strong></div><div><small>BATTLES</small><strong>${state.user.stats.battleWins || 0}/${state.user.stats.battles || 0}</strong></div><div><small>UPGRADES</small><strong>${state.user.stats.upgradeWins || 0}/${state.user.stats.upgrades || 0}</strong></div></div>
     <div class="timeline">${state.history.length ? state.history.map(historyRow).join('') : empty('◷','Aucun historique','Tes prochaines actions apparaîtront ici.')}</div></section>`;
 }
 function historyRow(e) {
   const items = (e.items || []).slice(0, 10);
-  return `<article class="history-row ${e.outcome || ''}"><div class="history-icon">${e.type==='battle'?'⚔':e.type==='upgrade'?'↗':e.type==='sell'?'↙':'◇'}</div><div class="history-body"><div><strong>${esc(e.title)}</strong><small>${new Date(e.at).toLocaleString('fr-FR')}</small></div><p>${esc(e.detail || '')}</p>${items.length ? `<div class="history-items">${items.map((it)=>`<span style="--r:${rarityColor[it.rarity] || '#999'}"><img src="${it.image}" alt=""><b>${esc(it.name)}</b><small>${esc(it.condition || '')} · ${money(it.value)}</small></span>`).join('')}</div>` : ''}</div><div class="history-profit ${Number(e.profit)>=0?'good':'bad'}">${Number(e.profit)>=0?'+':''}${money(e.profit || 0)} CR</div></article>`;
+  return `<article class="history-row ${e.outcome || ''}"><div class="history-icon">${e.type==='battle'?'⚔':e.type==='upgrade'?'↗':e.type==='tradeup'?'⇧':e.type==='sell'?'↙':e.type==='level'?'★':'◇'}</div><div class="history-body"><div><strong>${esc(e.title)}</strong><small>${new Date(e.at).toLocaleString('fr-FR')}</small></div><p>${esc(e.detail || '')}</p>${items.length ? `<div class="history-items">${items.map((it)=>`<span style="--r:${rarityColor[it.rarity] || '#999'}"><img src="${it.image}" alt=""><b>${esc(it.name)}</b><small>${esc(it.condition || '')} · ${money(it.value)}</small></span>`).join('')}</div>` : ''}</div><div class="history-profit ${Number(e.profit)>=0?'good':'bad'}">${Number(e.profit)>=0?'+':''}${money(e.profit || 0)} CR</div></article>`;
 }
 function renderLeaderboard() {
-  return `<section class="view"><div class="page-head"><div><span class="eyebrow">SERVER RANKING</span><h1>Classement</h1><p>Les meilleurs soldes fictifs du serveur.</p></div></div><div class="podium">${state.leaderboard.slice(0,3).map((u,i)=>`<div class="podium-user place-${i+1}"><span class="rank">${i+1}</span>${avatar(u,'large')}<strong>${esc(u.username)}</strong><b>${money(u.balance)} CR</b></div>`).join('')}</div><div class="leader-list">${state.leaderboard.map((u,i)=>`<div class="leader-row"><span>${i+1}</span>${avatar(u,'tiny')}<strong>${esc(u.username)}</strong><em>${u.stats.battleWins || 0} battles gagnées</em><b>${money(u.balance)} CR</b></div>`).join('')}</div></section>`;
+  return `<section class="view"><div class="page-head"><div><span class="eyebrow">SERVER RANKING</span><h1>Classement</h1><p>Classement par XP, niveau et progression globale.</p></div></div><div class="podium">${state.leaderboard.slice(0,3).map((u,i)=>`<div class="podium-user place-${i+1}"><span class="rank">${i+1}</span>${avatar(u,'large')}<strong>${esc(u.username)}</strong><b>Niv. ${u.level} · ${esc(u.rank)}</b><small>${u.xp} XP</small></div>`).join('')}</div><div class="leader-list">${state.leaderboard.map((u,i)=>`<div class="leader-row"><span>${i+1}</span>${avatar(u,'tiny')}<strong>${esc(u.username)}</strong><em>${u.stats.battleWins || 0} battles gagnées</em><b>Niv. ${u.level} · ${esc(u.rank)}</b><small>${u.xp} XP</small></div>`).join('')}</div></section>`;
 }
 function renderAdmin() {
   if (!state.user.admin) return empty('⌘','Accès administrateur requis','Ajoute ton identifiant Discord dans ADMIN_USER_IDS puis relance l’Activity.');
@@ -413,32 +462,30 @@ function renderAdmin() {
   const m = state.admin.metrics;
   return `<section class="skinova-admin">
     <header class="admin-hero"><div><span>SKINOVA CONTROL</span><h1>Panel administrateur</h1><p>Gestion complète des caisses, drops, joueurs, probabilités et réglages.</p></div><div class="admin-head-actions"><button class="skinova-secondary" data-action="fair-center">PROVABLY FAIR</button><button class="danger-button" data-action="admin-reset">RÉINITIALISER LA DÉMO</button></div></header>
-    <div class="admin-kpis"><article><i>♟</i><div><small>JOUEURS</small><strong>${m.users}</strong></div></article><article><i>▣</i><div><small>CAISSES ACTIVES</small><strong>${m.activeCases}</strong></div></article><article><i>◇</i><div><small>OBJETS</small><strong>${m.inventoryItems}</strong></div></article><article><i>⚔</i><div><small>BATTLES</small><strong>${m.battles}</strong></div></article><article><i>◆</i><div><small>CRÉDITS EN CIRCULATION</small><strong>${money(m.credits)}</strong></div></article></div>
+    <div class="admin-kpis"><article><i>♟</i><div><small>JOUEURS</small><strong>${m.users}</strong></div></article><article><i>★</i><div><small>NIVEAU MOYEN</small><strong>${(state.admin.users.reduce((sum,u)=>sum+Number(u.level||1),0)/Math.max(1,state.admin.users.length)).toFixed(1)}</strong></div></article><article><i>▣</i><div><small>CAISSES ACTIVES</small><strong>${m.activeCases}</strong></div></article><article><i>◇</i><div><small>OBJETS</small><strong>${m.inventoryItems}</strong></div></article><article><i>⚔</i><div><small>BATTLES</small><strong>${m.battles}</strong></div></article><article><i>◆</i><div><small>CRÉDITS EN CIRCULATION</small><strong>${money(m.credits)}</strong></div></article></div>
     <div class="admin-main-grid">
       <section class="admin-panel cases-control"><div class="panel-head"><div><small>GESTION DES CAISSES</small><h2>Catalogue</h2></div><button class="skinova-primary" data-action="admin-new-case">+ NOUVELLE CAISSE</button></div><div class="admin-table-head"><span>APERÇU</span><span>NOM</span><span>PRIX</span><span>STATUT</span><span>DROPS</span><span>ACTIONS</span></div><div class="admin-case-list">${state.admin.cases.map(adminCaseRow).join('')}</div></section>
       <section class="admin-panel fair-admin-card"><div class="panel-head"><div><small>PROVABLY FAIR</small><h2>Engagement actuel</h2></div></div><div class="fair-admin-body"><label>SERVER SEED HASH<code>${esc(state.fair?.serverHash || '—')}</code></label><label>CLIENT SEED<code>${esc(state.fair?.clientSeed || '—')}</code></label><label>NONCE ACTUEL<code>${Number(state.fair?.nonce || 0)}</code></label><button class="skinova-primary wide" data-action="fair-center">VÉRIFIER LES TIRAGES</button></div></section>
     </div>
     <div class="admin-main-grid lower-admin">
       <section class="admin-panel users-control"><div class="panel-head"><div><small>GESTION DES UTILISATEURS</small><h2>Comptes Discord</h2></div></div><div class="admin-users">${state.admin.users.map(adminUserRow).join('')}</div></section>
-      <section class="admin-panel settings-control"><div class="panel-head"><div><small>RÉGLAGES GLOBAUX</small><h2>Animations & bonus</h2></div></div><div class="settings-form"><label>Bonus daily<input id="adminDaily" type="number" value="${state.admin.settings.dailyGift}"></label><label>Ouverture (ms)<input id="adminOpening" type="number" value="${state.admin.settings.openingDurationMs}"></label><label>Upgrade (ms)<input id="adminUpgrade" type="number" value="${state.admin.settings.upgradeDurationMs}"></label><label>Battle / manche (ms)<input id="adminBattle" type="number" value="${state.admin.settings.battleRoundDurationMs || 5600}"></label><button class="skinova-primary wide" data-action="admin-save-settings">ENREGISTRER</button></div></section>
+      <section class="admin-panel settings-control"><div class="panel-head"><div><small>RÉGLAGES GLOBAUX</small><h2>Animations & bonus</h2></div></div><div class="settings-form"><label>Bonus daily<input id="adminDaily" type="number" value="${state.admin.settings.dailyGift}"></label><label>Ouverture (ms)<input id="adminOpening" type="number" value="${state.admin.settings.openingDurationMs}"></label><label>Upgrade (ms)<input id="adminUpgrade" type="number" value="${state.admin.settings.upgradeDurationMs}"></label><label>Battle / manche (ms)<input id="adminBattle" type="number" value="${state.admin.settings.battleRoundDurationMs || 5600}"></label><label>XP / caisse<input id="adminXpOpen" type="number" value="${state.admin.settings.xpOpen || 8}"></label><label>XP / battle<input id="adminXpBattle" type="number" value="${state.admin.settings.xpBattle || 70}"></label><label>Bonus XP victoire<input id="adminXpBattleWin" type="number" value="${state.admin.settings.xpBattleWinBonus || 35}"></label><label>XP / upgrade<input id="adminXpUpgrade" type="number" value="${state.admin.settings.xpUpgrade || 35}"></label><label>XP / Trade Up<input id="adminXpTradeUp" type="number" value="${state.admin.settings.xpTradeUp || 150}"></label><label>XP / daily<input id="adminXpDaily" type="number" value="${state.admin.settings.xpDaily || 25}"></label><button class="skinova-primary wide" data-action="admin-save-settings">ENREGISTRER</button></div></section>
     </div>
     <section class="admin-panel audit-control"><div class="panel-head"><div><small>JOURNAL D’AUDIT</small><h2>Dernières actions</h2></div></div><div class="audit-list">${state.admin.audit.slice(0,15).map((a)=>`<div><span>${esc(a.type)}</span><strong>${esc(a.detail)}</strong><small>${new Date(a.at).toLocaleString('fr-FR')}</small></div>`).join('')}</div></section>
   </section>`;
 }
-
 function adminCaseRow(c) {
   return `<div class="admin-case-row"><img src="${c.image}" alt=""><div class="admin-case-name"><strong>${esc(c.name)}</strong><small>${esc(c.tag || 'SKINOVA CASE')}</small></div><b>◆ ${money(c.price)}</b><span class="status-pill ${c.active?'active':'inactive'}">${c.active?'ACTIF':'INACTIF'}</span><span>${c.items.length} drops</span><div class="admin-row-actions"><button data-admin-toggle-case="${c.id}">${c.active ? 'Masquer' : 'Activer'}</button><button data-admin-edit-case="${c.id}">Gérer</button><button class="danger-mini" data-admin-delete-case="${c.id}">×</button></div></div>`;
 }
 
 function adminUserRow(u) {
-  return `<div class="admin-user-row">${avatar(u,'tiny')}<div class="admin-user-name"><input value="${esc(u.username)}" data-admin-username="${u.id}"><small>${u.inventoryCount} objets · ${u.banned?'BANNI':u.admin?'ADMIN':'JOUEUR'}</small></div><label><small>SOLDE</small><input type="number" value="${u.balance}" data-admin-balance="${u.id}"></label><label class="admin-role-check"><input type="checkbox" data-admin-role="${u.id}" ${u.admin?'checked':''}> Admin</label><button data-admin-save-user="${u.id}">Sauver</button><button class="${u.banned?'good-button':'danger-button'}" data-admin-ban="${u.id}">${u.banned?'Réactiver':'Bannir'}</button></div>`;
+  return `<div class="admin-user-row">${avatar(u,'tiny')}<div class="admin-user-name"><input value="${esc(u.username)}" data-admin-username="${u.id}"><small>${u.inventoryCount} objets · ${u.banned?'BANNI':u.admin?'ADMIN':'JOUEUR'}</small></div><label><small>SOLDE</small><input type="number" value="${u.balance}" data-admin-balance="${u.id}"></label><label><small>XP · NIV. ${u.level}</small><input type="number" value="${u.xp}" data-admin-xp="${u.id}"></label><label class="admin-role-check"><input type="checkbox" data-admin-role="${u.id}" ${u.admin?'checked':''}> Admin</label><button data-admin-save-user="${u.id}">Sauver</button><button class="${u.banned?'good-button':'danger-button'}" data-admin-ban="${u.id}">${u.banned?'Réactiver':'Bannir'}</button></div>`;
 }
-
 function empty(icon,title,text) { return `<div class="empty-state"><span>${icon}</span><h3>${title}</h3><p>${text}</p></div>`; }
 
 function profileMenu() {
   const demoSwitch = state.config.demoMode ? `<div class="profile-menu-section"><small>PROFILS DE DÉMONSTRATION</small><button data-demo-user="demo-nova">NOVA · Joueur</button><button data-demo-user="demo-admin">AdminNova · Admin</button></div>` : '';
-  modal(`<div class="profile-sheet"><button class="modal-close" data-close-modal>×</button>${avatar(state.user,'large')}<h2>${esc(state.user.username)}</h2><p>${money(state.user.balance)} crédits fictifs</p><div class="profile-stats"><span><b>${state.user.stats.opens || 0}</b> ouvertures</span><span><b>${state.user.stats.battleWins || 0}</b> battles gagnées</span><span><b>${state.inventory.length}</b> objets</span></div>${demoSwitch}<button class="ghost wide" data-close-modal>Fermer</button></div>`, 'profile-modal');
+  modal(`<div class="profile-sheet"><button class="modal-close" data-close-modal>×</button>${avatar(state.user,'large')}<h2>${esc(state.user.username)}</h2><p>${money(state.user.balance)} crédits fictifs</p><div class="profile-level-card"><span><b>NIVEAU ${progression().level}</b><small>${esc(progression().rank)}</small></span><strong>${progression().xpForNext?`${progression().xpIntoLevel} / ${progression().xpForNext} XP`:'MAX'}</strong><i><b style="width:${progression().progress}%"></b></i></div><div class="profile-stats"><span><b>${state.user.stats.opens || 0}</b> ouvertures</span><span><b>${state.user.stats.battleWins || 0}</b> battles gagnées</span><span><b>${state.inventory.length}</b> objets</span><span><b>${state.user.stats.tradeUps || 0}</b> Trade Ups</span></div>${demoSwitch}<button class="ghost wide" data-close-modal>Fermer</button></div>`, 'profile-modal');
 }
 function caseModal(caseDef) {
   state.selectedCase = caseDef;
@@ -584,6 +631,21 @@ async function handleClick(event) {
     inventoryItemModal(item);
     return;
   }
+  const tradeSelect = event.target.closest('[data-trade-select]');
+  if (tradeSelect) {
+    const uid=tradeSelect.dataset.tradeSelect;
+    const item=state.inventory.find((entry)=>entry.uid===uid);
+    if(!item)return;
+    const index=state.tradeSelection.indexOf(uid);
+    if(index>=0)state.tradeSelection.splice(index,1);
+    else {
+      const selected=tradeSelectedItems();
+      if(!tradeCompatible(item,selected)){toast('Même rareté et même type StatTrak requis','bad');return;}
+      if(state.tradeSelection.length>=10){toast('Le contrat contient déjà 10 objets','bad');return;}
+      state.tradeSelection.push(uid);
+    }
+    renderMain(); return;
+  }
   const action = event.target.closest('[data-action]')?.dataset.action;
   if (action === 'profile-menu') { profileMenu(); return; }
   if (action === 'fair-center') { await fairCenterModal(); return; }
@@ -594,7 +656,7 @@ async function handleClick(event) {
   if (action === 'verify-last-proof') { const index=Number(event.target.closest('[data-proof-index]')?.dataset.proofIndex || 0); await proofModal(state.lastProofs[index]); return; }
   if (action === 'verify-fair-history') { const index=Number(event.target.closest('[data-proof-index]')?.dataset.proofIndex || 0); await proofModal(state.fairData?.history?.[index]); return; }
   if (action === 'daily') {
-    try { const r=await api('/daily',{method:'POST'}); toast(`+${r.amount} CR reçus`,'good'); await refreshAll(); } catch(e){toast(e.message,'bad');} return;
+    try { const r=await api('/daily',{method:'POST'}); toast(`+${r.amount} CR · +${r.xp?.gained||0} XP`,'good'); await refreshAll(); } catch(e){toast(e.message,'bad');} return;
   }
   if (action === 'confirm-open') {
     try { const c=state.selectedCase; const r=await api(`/cases/${c.id}/open`,{method:'POST',body:{quantity:state.quantity}}); openingModal(c,r); await reloadUser(); document.getElementById('topBalance').textContent=`${money(state.user.balance)} CR`; renderMain(); } catch(e){toast(e.message,'bad');} return;
@@ -606,6 +668,23 @@ async function handleClick(event) {
     try { await api(`/inventory/${uid}/sell`,{method:'POST'}); closeModal(); toast('Objet revendu à 100 %','good'); await refreshAll(); } catch(e) { toast(e.message,'bad'); }
     return;
   }
+
+  if (action === 'inventory-tradeup') {
+    const uid = event.target.closest('[data-item-uid]')?.dataset.itemUid;
+    const item = state.inventory.find((entry)=>entry.uid===uid);
+    if (!item || item.rarity === 'gold') { toast('Cet objet ne peut pas être utilisé en Trade Up','bad'); return; }
+    state.tradeSelection = uid ? [uid] : [];
+    closeModal(); state.active='tradeup';
+    document.querySelectorAll('[data-nav]').forEach((el)=>el.classList.toggle('active',el.dataset.nav===state.active));
+    renderMain(); return;
+  }
+  if (action === 'tradeup-clear') { state.tradeSelection=[]; renderMain(); return; }
+  if (action === 'tradeup-submit') {
+    if ((state.tradeSelection||[]).length !== 10) return;
+    try { const result=await api('/trade-up',{method:'POST',body:{uids:state.tradeSelection}}); state.tradeSelection=[]; await reloadUser(); renderMain(); showTradeUpResult(result); toast(`Trade Up réussi · +${result.xp?.gained||0} XP`,'good'); } catch(error){ toast(error.message,'bad'); }
+    return;
+  }
+
   if (action === 'inventory-upgrade') {
     const uid = event.target.closest('[data-item-uid]')?.dataset.itemUid;
     closeModal();
@@ -628,7 +707,7 @@ async function handleClick(event) {
   }
   if (action === 'admin-new-case') { adminCaseModal(); return; }
   if (action === 'admin-save-settings') {
-    try{await api('/admin/settings',{method:'PATCH',body:{dailyGift:Number(document.getElementById('adminDaily').value),openingDurationMs:Number(document.getElementById('adminOpening').value),upgradeDurationMs:Number(document.getElementById('adminUpgrade').value),battleRoundDurationMs:Number(document.getElementById('adminBattle').value)}});toast('Réglages enregistrés','good');await loadAdmin();}catch(e){toast(e.message,'bad');}return;
+    try{await api('/admin/settings',{method:'PATCH',body:{dailyGift:Number(document.getElementById('adminDaily').value),openingDurationMs:Number(document.getElementById('adminOpening').value),upgradeDurationMs:Number(document.getElementById('adminUpgrade').value),battleRoundDurationMs:Number(document.getElementById('adminBattle').value),xpOpen:Number(document.getElementById('adminXpOpen').value),xpBattle:Number(document.getElementById('adminXpBattle').value),xpBattleWinBonus:Number(document.getElementById('adminXpBattleWin').value),xpUpgrade:Number(document.getElementById('adminXpUpgrade').value),xpTradeUp:Number(document.getElementById('adminXpTradeUp').value),xpDaily:Number(document.getElementById('adminXpDaily').value)}});toast('Réglages enregistrés','good');await loadAdmin();}catch(e){toast(e.message,'bad');}return;
   }
   if (action === 'admin-reset') {
     if(!confirm('Réinitialiser toutes les données de démonstration ?'))return;
@@ -667,7 +746,7 @@ async function handleClick(event) {
   const submitDrop=event.target.closest('[data-admin-submit-drop]');
   if(submitDrop){const caseId=submitDrop.dataset.adminSubmitDrop;const c=state.admin.cases.find(x=>x.id===caseId);if(!c)return;const id=submitDrop.dataset.dropId || `drop-${Date.now().toString(36)}`;const item={id,weapon:document.getElementById('dropWeapon').value,name:document.getElementById('dropName').value,value:Number(document.getElementById('dropValue').value),weight:Number(document.getElementById('dropWeight').value),rarity:document.getElementById('dropRarity').value,image:document.getElementById('dropImage').value,wear:{FN:Number(document.getElementById('dropWearFN').value),MW:Number(document.getElementById('dropWearMW').value),FT:Number(document.getElementById('dropWearFT').value),WW:Number(document.getElementById('dropWearWW').value),BS:Number(document.getElementById('dropWearBS').value)},stattrak:Number(document.getElementById('dropStatTrak').value)};const items=c.items.some(x=>x.id===id)?c.items.map(x=>x.id===id?item:x):[...c.items,item];try{await api(`/admin/cases/${c.id}`,{method:'PUT',body:{...c,items}});toast('Drop enregistré','good');closeModal();await loadAdmin();await loadPublic();renderMain();}catch(e){toast(e.message,'bad');}return;}
   const saveUser=event.target.closest('[data-admin-save-user]');
-  if(saveUser){const id=saveUser.dataset.adminSaveUser;const input=document.querySelector(`[data-admin-balance="${CSS.escape(id)}"]`);const username=document.querySelector(`[data-admin-username="${CSS.escape(id)}"]`);const role=document.querySelector(`[data-admin-role="${CSS.escape(id)}"]`);try{await api(`/admin/users/${id}`,{method:'PATCH',body:{balance:Number(input.value),username:username?.value||'',admin:!!role?.checked}});toast('Solde enregistré','good');await loadAdmin();}catch(e){toast(e.message,'bad');}return;}
+  if(saveUser){const id=saveUser.dataset.adminSaveUser;const input=document.querySelector(`[data-admin-balance="${CSS.escape(id)}"]`);const username=document.querySelector(`[data-admin-username="${CSS.escape(id)}"]`);const xp=document.querySelector(`[data-admin-xp="${CSS.escape(id)}"]`);const role=document.querySelector(`[data-admin-role="${CSS.escape(id)}"]`);try{await api(`/admin/users/${id}`,{method:'PATCH',body:{balance:Number(input.value),xp:Number(xp?.value||0),username:username?.value||'',admin:!!role?.checked}});toast('Solde enregistré','good');await loadAdmin();}catch(e){toast(e.message,'bad');}return;}
   const ban=event.target.closest('[data-admin-ban]');
   if(ban){const u=state.admin.users.find(x=>x.id===ban.dataset.adminBan);try{await api(`/admin/users/${u.id}`,{method:'PATCH',body:{banned:!u.banned}});toast('Compte mis à jour','good');await loadAdmin();}catch(e){toast(e.message,'bad');}return;}
 }

@@ -5,6 +5,72 @@ function item(id, weapon, name, value, weight, rarity, image, stattrak = 10) {
   return { id, weapon, name, value, weight, rarity, image, wear: { ...wear }, stattrak };
 }
 
+
+const generatedMultipliers = [0.08, 0.14, 0.22, 0.32, 0.44, 0.58, 0.72, 1.15, 1.55, 2.2, 4.2, 9];
+const generatedWeights = [18, 16, 14, 12, 10, 6, 4, 10, 5, 3, 1.5, 0.5];
+const generatedRarities = ['consumer','industrial','mil-spec','restricted','restricted','classified','classified','covert','covert','covert','gold','gold'];
+const generatedSuffixes = ['Nightline','Circuit','Reactor','Afterburn','Vortex','Overdrive','Revenant','Eclipse','Sovereign','Apex','Relic','Ascendant'];
+const weaponImages = {
+  'AK-47': '/assets/weapons/ak.webp', AWP: '/assets/weapons/awp.webp', Knife: '/assets/weapons/knife.webp', Gloves: '/assets/weapons/gloves.webp',
+  'USP-S': '/assets/weapons/pistol.webp', 'Glock-18': '/assets/weapons/pistol.webp', 'Desert Eagle': '/assets/weapons/pistol.webp', P250: '/assets/weapons/pistol.webp',
+  MP9: '/assets/weapons/smg.webp', MAC10: '/assets/weapons/smg.webp', MP7: '/assets/weapons/smg.webp', UMP45: '/assets/weapons/smg.webp',
+  'M4A1-S': '/assets/weapons/rifle.webp', M4A4: '/assets/weapons/rifle.webp', FAMAS: '/assets/weapons/rifle.webp', AUG: '/assets/weapons/rifle.webp', Galil: '/assets/weapons/rifle.webp',
+};
+
+function generatedCase(config) {
+  const weapons = config.weapons;
+  return {
+    id: config.id,
+    name: config.name,
+    price: config.price,
+    active: true,
+    accent: config.accent,
+    image: config.image,
+    tag: config.tag,
+    items: generatedMultipliers.map((multiplier, index) => {
+      const weapon = weapons[index % weapons.length];
+      const noStatTrak = weapon === 'Knife' || weapon === 'Gloves';
+      return item(
+        `${config.id}-${index + 1}`,
+        weapon,
+        `${config.theme} ${generatedSuffixes[index]}`,
+        Math.max(1, Math.round(config.price * multiplier * 100) / 100),
+        generatedWeights[index],
+        generatedRarities[index],
+        weaponImages[weapon] || '/assets/weapons/rifle.webp',
+        noStatTrak ? 0 : 10,
+      );
+    }),
+  };
+}
+
+const additionalCases = [
+  { id:'pistol-pulse', name:'PISTOL PULSE', price:20, accent:'#ff7a2f', image:'/assets/cases/confirmed-vault.webp', tag:'PISTOL STARTER', theme:'Pulse', weapons:['USP-S','Glock-18','P250','Desert Eagle'] },
+  { id:'smg-rush', name:'SMG RUSH', price:35, accent:'#20d8c8', image:'/assets/cases/budget-frenzy.webp', tag:'CLOSE RANGE', theme:'Rush', weapons:['MP9','MAC10','MP7','UMP45'] },
+  { id:'rifle-circuit', name:'RIFLE CIRCUIT', price:55, accent:'#5ca8ff', image:'/assets/cases/ak-legends.webp', tag:'RIFLE MIX', theme:'Circuit', weapons:['AK-47','M4A1-S','M4A4','FAMAS','Galil'] },
+  { id:'desert-crown', name:'DESERT CROWN', price:70, accent:'#e5b14b', image:'/assets/cases/confirmed-vault.webp', tag:'HEAVY PISTOLS', theme:'Crown', weapons:['Desert Eagle','USP-S','Glock-18','P250'] },
+  { id:'m4-dominion', name:'M4 DOMINION', price:90, accent:'#6f91ff', image:'/assets/cases/ak-legends.webp', tag:'M4 COLLECTION', theme:'Dominion', weapons:['M4A1-S','M4A4','FAMAS','AUG'] },
+  { id:'neon-arsenal', name:'NEON ARSENAL', price:105, accent:'#ff4ca3', image:'/assets/cases/royal-overdrive.webp', tag:'NEON MIX', theme:'Neon', weapons:['AK-47','M4A1-S','AWP','USP-S','MP9'] },
+  { id:'tactical-storm', name:'TACTICAL STORM', price:125, accent:'#68c4ff', image:'/assets/cases/sniper-ritual.webp', tag:'TACTICAL LOADOUT', theme:'Storm', weapons:['M4A1-S','AK-47','AWP','USP-S','MP7'] },
+  { id:'crimson-protocol', name:'CRIMSON PROTOCOL', price:150, accent:'#ff465f', image:'/assets/cases/knife-protocol.webp', tag:'CRIMSON SERIES', theme:'Crimson', weapons:['AK-47','M4A4','AWP','Knife','USP-S'] },
+  { id:'glacier-strike', name:'GLACIER STRIKE', price:175, accent:'#7be6ff', image:'/assets/cases/sniper-ritual.webp', tag:'FROZEN COLLECTION', theme:'Glacier', weapons:['AWP','M4A1-S','AK-47','USP-S','Knife'] },
+  { id:'toxic-chamber', name:'TOXIC CHAMBER', price:200, accent:'#8ee93a', image:'/assets/cases/budget-frenzy.webp', tag:'TOXIC SERIES', theme:'Toxic', weapons:['AK-47','M4A4','AWP','MP9','Knife'] },
+  { id:'shadow-market', name:'SHADOW MARKET', price:230, accent:'#8975c8', image:'/assets/cases/confirmed-vault.webp', tag:'DARK COLLECTION', theme:'Shadow', weapons:['USP-S','AK-47','M4A1-S','AWP','Gloves'] },
+  { id:'cyber-rebellion', name:'CYBER REBELLION', price:275, accent:'#f04cff', image:'/assets/cases/royal-overdrive.webp', tag:'CYBER SERIES', theme:'Cyber', weapons:['AK-47','M4A1-S','AWP','Knife','Gloves'] },
+  { id:'fade-district', name:'FADE DISTRICT', price:320, accent:'#ffb34d', image:'/assets/cases/knife-protocol.webp', tag:'FADE COLLECTION', theme:'Fade', weapons:['Knife','AK-47','M4A1-S','AWP','USP-S'] },
+  { id:'doppler-core', name:'DOPPLER CORE', price:380, accent:'#915cff', image:'/assets/cases/knife-protocol.webp', tag:'DOPPLER SERIES', theme:'Doppler', weapons:['Knife','AWP','AK-47','M4A1-S','Gloves'] },
+  { id:'glove-syndicate', name:'GLOVE SYNDICATE', price:450, accent:'#ff8a48', image:'/assets/cases/royal-overdrive.webp', tag:'GLOVE VAULT', theme:'Syndicate', weapons:['Gloves','Knife','AK-47','AWP'] },
+  { id:'elite-loadout', name:'ELITE LOADOUT', price:520, accent:'#ffc857', image:'/assets/cases/royal-overdrive.webp', tag:'ELITE MIX', theme:'Elite', weapons:['AK-47','M4A1-S','AWP','Knife','Gloves'] },
+  { id:'crimson-dynasty', name:'CRIMSON DYNASTY', price:650, accent:'#ff304d', image:'/assets/cases/royal-overdrive.webp', tag:'PREMIUM CRIMSON', theme:'Dynasty', weapons:['Knife','Gloves','AK-47','AWP','M4A1-S'] },
+  { id:'emerald-vault', name:'EMERALD VAULT', price:800, accent:'#29d98d', image:'/assets/cases/knife-protocol.webp', tag:'EMERALD PREMIUM', theme:'Emerald', weapons:['Knife','Gloves','AWP','AK-47'] },
+  { id:'sapphire-temple', name:'SAPPHIRE TEMPLE', price:950, accent:'#438cff', image:'/assets/cases/sniper-ritual.webp', tag:'SAPPHIRE PREMIUM', theme:'Sapphire', weapons:['Knife','AWP','Gloves','M4A1-S'] },
+  { id:'ruby-dominion', name:'RUBY DOMINION', price:1200, accent:'#ff365e', image:'/assets/cases/royal-overdrive.webp', tag:'RUBY PREMIUM', theme:'Ruby', weapons:['Knife','Gloves','AK-47','AWP'] },
+  { id:'mythic-arsenal', name:'MYTHIC ARSENAL', price:1500, accent:'#d98bff', image:'/assets/cases/royal-overdrive.webp', tag:'MYTHIC TIER', theme:'Mythic', weapons:['Knife','Gloves','AWP','AK-47','M4A1-S'] },
+  { id:'dragon-chamber', name:'DRAGON CHAMBER', price:2000, accent:'#ff7a24', image:'/assets/cases/sniper-ritual.webp', tag:'DRAGON TIER', theme:'Dragon', weapons:['AWP','AK-47','Knife','Gloves'] },
+  { id:'collectors-crown', name:"COLLECTOR'S CROWN", price:3000, accent:'#ffd45a', image:'/assets/cases/royal-overdrive.webp', tag:'COLLECTOR TIER', theme:'Collector', weapons:['Knife','Gloves','AWP','AK-47','M4A1-S'] },
+  { id:'nova-jackpot', name:'NOVA JACKPOT', price:5000, accent:'#ff9b2f', image:'/assets/cases/royal-overdrive.webp', tag:'ULTIMATE JACKPOT', theme:'Nova', weapons:['Knife','Gloves','AWP','AK-47'] },
+].map(generatedCase);
+
 export const initialCases = [
   {
     id: 'confirmed-vault', name: 'CONFIRMED VAULT', price: 75, active: true,
@@ -114,22 +180,30 @@ export const initialCases = [
       item('ro12','AWP','Dragon Lore',8500,1,'gold','/assets/weapons/awp.webp'),
     ],
   },
+  ...additionalCases,
 ];
 
 export const initialState = {
   settings: {
     dailyGift: 100,
     openingDurationMs: 5200,
-    upgradeDurationMs: 9500,
+    upgradeDurationMs: 9800,
+    battleRoundDurationMs: 5600,
     sellRate: 1,
+    xpOpen: 8,
+    xpBattle: 70,
+    xpBattleWinBonus: 35,
+    xpUpgrade: 35,
+    xpTradeUp: 150,
+    xpDaily: 25,
     valueMultipliers: multipliers,
   },
   cases: initialCases,
   users: [
-    { id: 'demo-admin', username: 'ForgeMaster', avatar: '', balance: 2500, admin: true, banned: false, inventory: [], history: [], stats: { opens: 0, battles: 0, battleWins: 0, upgrades: 0, upgradeWins: 0, profit: 0 }, lastDaily: 0 },
-    { id: 'demo-nova', username: 'NOVA', avatar: '', balance: 980, admin: false, banned: false, inventory: [], history: [], stats: { opens: 12, battles: 6, battleWins: 3, upgrades: 4, upgradeWins: 1, profit: 124 }, lastDaily: 0 },
-    { id: 'demo-raven', username: 'RAVEN', avatar: '', balance: 740, admin: false, banned: false, inventory: [], history: [], stats: { opens: 9, battles: 4, battleWins: 2, upgrades: 2, upgradeWins: 1, profit: 62 }, lastDaily: 0 },
-    { id: 'demo-kira', username: 'KIRA', avatar: '', balance: 530, admin: false, banned: false, inventory: [], history: [], stats: { opens: 7, battles: 3, battleWins: 1, upgrades: 1, upgradeWins: 0, profit: -33 }, lastDaily: 0 },
+    { id: 'demo-admin', username: 'ForgeMaster', avatar: '', balance: 2500, admin: true, banned: false, inventory: [], history: [], stats: { opens: 0, battles: 0, battleWins: 0, upgrades: 0, upgradeWins: 0, tradeUps: 0, profit: 0 }, xp: 0, lastDaily: 0 },
+    { id: 'demo-nova', username: 'NOVA', avatar: '', balance: 980, admin: false, banned: false, inventory: [], history: [], stats: { opens: 12, battles: 6, battleWins: 3, upgrades: 4, upgradeWins: 1, tradeUps: 0, profit: 124 }, xp: 1840, lastDaily: 0 },
+    { id: 'demo-raven', username: 'RAVEN', avatar: '', balance: 740, admin: false, banned: false, inventory: [], history: [], stats: { opens: 9, battles: 4, battleWins: 2, upgrades: 2, upgradeWins: 1, tradeUps: 0, profit: 62 }, xp: 1120, lastDaily: 0 },
+    { id: 'demo-kira', username: 'KIRA', avatar: '', balance: 530, admin: false, banned: false, inventory: [], history: [], stats: { opens: 7, battles: 3, battleWins: 1, upgrades: 1, upgradeWins: 0, tradeUps: 0, profit: -33 }, xp: 720, lastDaily: 0 },
   ],
   battles: [],
   audit: [],

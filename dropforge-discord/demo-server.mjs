@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getState, getUser, load, publicUser, reset, save, snapshot } from './server/store.js';
-import { claimDaily, createBattle, joinBattle, openCases, runUpgrade, sellAll, sellItem, startBattle } from './server/game.js';
+import { claimDaily, createBattle, joinBattle, openCases, runUpgrade, previewTradeUp, runTradeUp, sellAll, sellItem, startBattle } from './server/game.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(root, 'dist');
@@ -74,12 +74,14 @@ async function api(req,res,url) {
       return json(res,200,{user:publicUser(target)},{'Set-Cookie':`df_demo_user=${encodeURIComponent(target.id)}; Path=/; SameSite=Lax; Max-Age=2592000`});
     }
     if(method==='GET'&&pathname==='/api/cases')return json(res,200,{cases:getState().cases.filter(c=>c.active!==false)});
-    if(method==='GET'&&pathname==='/api/leaderboard')return json(res,200,{users:[...getState().users].filter(u=>!u.banned).sort((a,b)=>b.balance-a.balance).map(publicUser)});
+    if(method==='GET'&&pathname==='/api/leaderboard')return json(res,200,{users:[...getState().users].filter(u=>!u.banned).sort((a,b)=>(Number(b.xp)||0)-(Number(a.xp)||0)||b.balance-a.balance).map(publicUser)});
     if(method==='GET'&&pathname==='/api/battles')return json(res,200,{battles:getState().battles.slice(0,30)});
     if(method==='POST'&&pathname==='/api/daily')return json(res,200,claimDaily(user.id));
     let m=pathname.match(/^\/api\/cases\/([^/]+)\/open$/);if(method==='POST'&&m){const body=await readBody(req);return json(res,200,openCases(user.id,m[1],body.quantity));}
     m=pathname.match(/^\/api\/inventory\/([^/]+)\/sell$/);if(method==='POST'&&m)return json(res,200,sellItem(user.id,m[1]));
     if(method==='POST'&&pathname==='/api/inventory/sell-all')return json(res,200,sellAll(user.id));
+    if(method==='POST'&&pathname==='/api/trade-up/preview'){const body=await readBody(req);return json(res,200,previewTradeUp(user.id,body.uids));}
+    if(method==='POST'&&pathname==='/api/trade-up'){const body=await readBody(req);return json(res,200,runTradeUp(user.id,body.uids));}
     if(method==='POST'&&pathname==='/api/upgrade'){const body=await readBody(req);return json(res,200,runUpgrade(user.id,body.uid,body.multiplier));}
     if(method==='POST'&&pathname==='/api/battles'){const body=await readBody(req);return json(res,200,createBattle(user.id,body.caseId,body.rounds,body.slots));}
     m=pathname.match(/^\/api\/battles\/([^/]+)\/join$/);if(method==='POST'&&m)return json(res,200,joinBattle(user.id,m[1]));
@@ -90,8 +92,8 @@ async function api(req,res,url) {
     }
     if(method==='POST'&&pathname==='/api/admin/cases'){const body=await readBody(req),entry=casePayload(body);getState().cases.push(entry);save();return json(res,200,entry);}
     m=pathname.match(/^\/api\/admin\/cases\/([^/]+)$/);if(method==='PUT'&&m){const body=await readBody(req),idx=getState().cases.findIndex(c=>c.id===m[1]);if(idx<0)throw new Error('Caisse introuvable');getState().cases[idx]=casePayload(body,getState().cases[idx]);save();return json(res,200,getState().cases[idx]);}
-    m=pathname.match(/^\/api\/admin\/users\/([^/]+)$/);if(method==='PATCH'&&m){const body=await readBody(req),target=getUser(m[1]);if(!target)throw new Error('Utilisateur introuvable');if(Number.isFinite(Number(body.balance)))target.balance=Math.max(0,Number(body.balance));if(typeof body.banned==='boolean')target.banned=body.banned;if(typeof body.admin==='boolean')target.admin=body.admin;save();return json(res,200,publicUser(target));}
-    if(method==='PATCH'&&pathname==='/api/admin/settings'){const body=await readBody(req);Object.assign(getState().settings,{dailyGift:Math.max(0,Number(body.dailyGift)||0),openingDurationMs:Math.max(1500,Number(body.openingDurationMs)||5200),upgradeDurationMs:Math.max(3000,Number(body.upgradeDurationMs)||9800),battleRoundDurationMs:Math.max(2500,Number(body.battleRoundDurationMs)||5600)});save();return json(res,200,getState().settings);}
+    m=pathname.match(/^\/api\/admin\/users\/([^/]+)$/);if(method==='PATCH'&&m){const body=await readBody(req),target=getUser(m[1]);if(!target)throw new Error('Utilisateur introuvable');if(Number.isFinite(Number(body.balance)))target.balance=Math.max(0,Number(body.balance));if(Number.isFinite(Number(body.xp)))target.xp=Math.max(0,Number(body.xp));if(typeof body.banned==='boolean')target.banned=body.banned;if(typeof body.admin==='boolean')target.admin=body.admin;save();return json(res,200,publicUser(target));}
+    if(method==='PATCH'&&pathname==='/api/admin/settings'){const body=await readBody(req);Object.assign(getState().settings,{dailyGift:Math.max(0,Number(body.dailyGift)||0),openingDurationMs:Math.max(1500,Number(body.openingDurationMs)||5200),upgradeDurationMs:Math.max(3000,Number(body.upgradeDurationMs)||9800),battleRoundDurationMs:Math.max(2500,Number(body.battleRoundDurationMs)||5600),xpOpen:Math.max(0,Number(body.xpOpen)||0),xpBattle:Math.max(0,Number(body.xpBattle)||0),xpBattleWinBonus:Math.max(0,Number(body.xpBattleWinBonus)||0),xpUpgrade:Math.max(0,Number(body.xpUpgrade)||0),xpTradeUp:Math.max(0,Number(body.xpTradeUp)||0),xpDaily:Math.max(0,Number(body.xpDaily)||0)});save();return json(res,200,getState().settings);}
     if(method==='POST'&&pathname==='/api/admin/reset'){reset();return json(res,200,{ok:true});}
     return json(res,404,{error:'Route API introuvable'});
   } catch(error){return json(res,400,{error:error.message||'Erreur'});}

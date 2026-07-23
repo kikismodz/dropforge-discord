@@ -112,3 +112,6 @@ body{overflow:hidden}
   .inventory-grid-v11{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
 }
 @media(max-width:620px){.inventory-grid-v11{grid-template-columns:repeat(2,minmax(0,1fr))}.inventory-art-v11{height:118px}.inventory-modal-actions-v11{grid-template-columns:1fr}}
+
+/* Skinova V1.3 mobile navigation */
+@media(max-width:900px){.skinova-mobile-nav{grid-template-columns:repeat(6,minmax(0,1fr))}.skinova-mobile-nav .nav-item b{font-size:6.5px}}
