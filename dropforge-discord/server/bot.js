@@ -10,6 +10,7 @@ import {
 } from 'discord.js';
 import { getState, getUser, publicUser, save, upsertDiscordUser } from './store.js';
 import { claimDaily, createBattle, findCase, joinBattle, startBattle } from './game.js';
+import { runSkinovaSetup, setupConfirmRow, setupPreviewEmbed, setupResultEmbed } from './setup.js';
 
 function discordProfile(user) {
   return {
@@ -51,6 +52,17 @@ export async function startDiscordBot({ token, publicUrl, io }) {
     try {
       if (interaction.isChatInputCommand()) {
         const user = upsertDiscordUser(discordProfile(interaction.user));
+        if (interaction.commandName === 'setup-skinova') {
+          if (!interaction.guild || !interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+            throw new Error('Permission Administrateur requise.');
+          }
+          await interaction.reply({
+            embeds: [setupPreviewEmbed(interaction.guild)],
+            components: [setupConfirmRow(interaction.user.id)],
+            ephemeral: true,
+          });
+          return;
+        }
         if (interaction.commandName === 'skinova') {
           const embed = new EmbedBuilder()
             .setColor('#ff3d8d')
@@ -115,6 +127,27 @@ export async function startDiscordBot({ token, publicUrl, io }) {
           save();
           await interaction.reply({ content: `Solde de **${target.username}** : ${target.balance.toFixed(2)} CR`, ephemeral: true });
         }
+      }
+
+      if (interaction.isButton() && interaction.customId.startsWith('sn_setup_')) {
+        const [, ownerId] = interaction.customId.split(':');
+        if (interaction.user.id !== ownerId) {
+          await interaction.reply({ content: 'Seul l’administrateur ayant lancé la commande peut confirmer.', ephemeral: true });
+          return;
+        }
+        if (interaction.customId.startsWith('sn_setup_cancel')) {
+          await interaction.update({ content: 'Installation annulée.', embeds: [], components: [] });
+          return;
+        }
+        await interaction.update({ content: '⏳ Installation de la structure Skinova…', embeds: [], components: [] });
+        const setupMember = await interaction.guild.members.fetch(interaction.user.id);
+        const summary = await runSkinovaSetup({
+          guild: interaction.guild,
+          member: setupMember,
+          publicUrl,
+        });
+        await interaction.editReply({ content: '', embeds: [setupResultEmbed(summary)], components: [] });
+        return;
       }
 
       if (interaction.isButton() && interaction.customId.startsWith('df_')) {
