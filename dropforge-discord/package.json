@@ -3,14 +3,13 @@
   "version": "1.4.2",
   "private": true,
   "type": "module",
-  "description": "Skinova Discord Activity V1.4.2 — installateur automatique de serveur professionnel",
+  "description": "Skinova Discord Activity V1.4.2",
   "scripts": {
     "dev": "concurrently -k -n CLIENT,SERVER -c cyan,magenta \"vite --host 0.0.0.0\" \"node --watch server/index.js\"",
-    "build": "node scripts/sync-skin-images.mjs || echo '[Skinova images] synchronisation ignorée' && vite build",
+    "build": "vite build",
     "start": "node server/index.js",
     "demo": "npm run build && npm start",
-    "register": "node scripts/register-commands.js",
-    "sync:skins": "node scripts/sync-skin-images.mjs"
+    "register": "node scripts/register-commands.js"
   },
   "dependencies": {
     "@discord/embedded-app-sdk": "^2.5.0",
