@@ -84,6 +84,113 @@ function normalize(input) {
     }
     result.meta.catalogVersion = 2;
   }
+  if (Number(result.meta.catalogVersion || 0) < 4) {
+    const definitions = new Map();
+    for (const caseDef of base.cases) {
+      for (const drop of caseDef.items || []) definitions.set(drop.id, drop);
+      const current = result.cases.find((entry) => entry.id === caseDef.id);
+      if (!current) continue;
+      for (const drop of current.items || []) {
+        const canonical = definitions.get(drop.id);
+        if (!canonical) continue;
+        drop.weapon = canonical.weapon;
+        drop.name = canonical.name;
+        drop.stattrak = canonical.stattrak;
+        if (!drop.image || String(drop.image).startsWith('/assets/weapons/')) drop.image = canonical.image;
+      }
+    }
+    const migrateItem = (owned) => {
+      const canonical = definitions.get(owned?.itemId);
+      if (!canonical) return owned;
+      owned.weapon = canonical.weapon;
+      owned.name = canonical.name;
+      if (!owned.image || String(owned.image).startsWith('/assets/weapons/')) owned.image = canonical.image;
+      return owned;
+    };
+    const migrateHistory = (entry) => {
+      for (const key of ['items', 'sourceItems']) {
+        if (Array.isArray(entry?.[key])) entry[key].forEach(migrateItem);
+      }
+    };
+    for (const user of result.users || []) {
+      (user.inventory || []).forEach(migrateItem);
+      (user.history || []).forEach(migrateHistory);
+    }
+    result.meta.catalogVersion = 4;
+  }
+  if (Number(result.meta.catalogVersion || 0) < 5) {
+    const definitions = new Map();
+    for (const caseDef of base.cases) {
+      for (const drop of caseDef.items || []) definitions.set(drop.id, drop);
+      const current = result.cases.find((entry) => entry.id === caseDef.id);
+      if (!current) continue;
+      for (const drop of current.items || []) {
+        const canonical = definitions.get(drop.id);
+        if (!canonical) continue;
+        const currentImage = String(drop.image || '');
+        if (!currentImage || currentImage.startsWith('/assets/weapons/') || currentImage.includes('raw.githubusercontent.com/ByMykel/')) {
+          drop.image = canonical.image;
+        }
+      }
+    }
+    const migrateImage = (owned) => {
+      const canonical = definitions.get(owned?.itemId);
+      if (!canonical) return owned;
+      const currentImage = String(owned.image || '');
+      if (!currentImage || currentImage.startsWith('/assets/weapons/') || currentImage.includes('raw.githubusercontent.com/ByMykel/')) {
+        owned.image = canonical.image;
+      }
+      return owned;
+    };
+    for (const user of result.users || []) {
+      (user.inventory || []).forEach(migrateImage);
+      for (const entry of user.history || []) {
+        for (const key of ['items', 'sourceItems']) {
+          if (Array.isArray(entry?.[key])) entry[key].forEach(migrateImage);
+        }
+      }
+    }
+    result.meta.catalogVersion = 5;
+  }
+
+  // Rafraîchit les visuels génériques avec le manifest chargé au démarrage.
+  // Les images personnalisées de l'admin (data URL ou domaine tiers) sont conservées.
+  {
+    const definitions = new Map();
+    for (const caseDef of base.cases) {
+      for (const drop of caseDef.items || []) definitions.set(drop.id, drop);
+    }
+    const canReplace = (current, canonical) => {
+      const value = String(current || '');
+      const next = String(canonical || '');
+      if (!next || next.startsWith('/assets/weapons/')) return false;
+      return !value
+        || value.startsWith('/assets/weapons/')
+        || value.includes('raw.githubusercontent.com/ByMykel/')
+        || value.includes('git.hubp.de/raw-githubusercontent-com/ByMykel/')
+        || value.includes('bymykel.github.io/CSGO-API/');
+    };
+    for (const caseDef of result.cases || []) {
+      for (const drop of caseDef.items || []) {
+        const canonical = definitions.get(drop.id);
+        if (canonical && canReplace(drop.image, canonical.image)) drop.image = canonical.image;
+      }
+    }
+    const refreshOwned = (owned) => {
+      const canonical = definitions.get(owned?.itemId);
+      if (canonical && canReplace(owned.image, canonical.image)) owned.image = canonical.image;
+    };
+    for (const user of result.users || []) {
+      (user.inventory || []).forEach(refreshOwned);
+      for (const entry of user.history || []) {
+        for (const key of ['items', 'sourceItems']) {
+          if (Array.isArray(entry?.[key])) entry[key].forEach(refreshOwned);
+        }
+      }
+    }
+    result.meta.catalogVersion = Math.max(6, Number(result.meta.catalogVersion || 0));
+  }
+
   result.users = Array.isArray(result.users) && result.users.length ? result.users : base.users;
   result.users.forEach(ensureUser);
   result.battles ||= [];

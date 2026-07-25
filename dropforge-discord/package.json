@@ -1,15 +1,16 @@
 {
   "name": "skinova-discord-activity",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "private": true,
   "type": "module",
-  "description": "Skinova Discord Activity V1.4.2",
+  "description": "Skinova Discord Activity — chargement fiable des visuels de skins au démarrage",
   "scripts": {
     "dev": "concurrently -k -n CLIENT,SERVER -c cyan,magenta \"vite --host 0.0.0.0\" \"node --watch server/index.js\"",
     "build": "vite build",
-    "start": "node server/index.js",
+    "start": "node scripts/sync-skin-manifest.mjs && node server/index.js",
     "demo": "npm run build && npm start",
-    "register": "node scripts/register-commands.js"
+    "register": "node scripts/register-commands.js",
+    "sync:skins": "node scripts/sync-skin-manifest.mjs"
   },
   "dependencies": {
     "@discord/embedded-app-sdk": "^2.5.0",
