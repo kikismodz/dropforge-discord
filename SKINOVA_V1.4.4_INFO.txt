@@ -1,0 +1,10 @@
+Skinova V1.4.4
+
+- Mapping robuste des images CS2 au démarrage
+- Alias armes / couteaux / gants / variantes Doppler
+- Correspondance approchée et fallback stable sur la même arme
+- Commande /setup-skinova intégrée
+- Surnom serveur du bot : Skinova (si permission Change Nickname)
+- Présence du bot : Skinova · /skinova
+- Aucun data/db.json dans le patch
+- Build Railway : vite build uniquement
