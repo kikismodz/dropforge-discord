@@ -1,9 +1,9 @@
 {
   "name": "skinova-discord-activity",
-  "version": "1.4.7",
+  "version": "1.4.8",
   "private": true,
   "type": "module",
-  "description": "Skinova Discord Activity — canonical CS2 catalogue with same-origin cached image proxy and Discord server installer",
+  "description": "Skinova Discord Activity — canonical CS2 catalogue with Discord-aware same-origin image proxy and Discord server installer",
   "scripts": {
     "dev": "concurrently -k -n CLIENT,SERVER -c cyan,magenta \"vite --host 0.0.0.0\" \"node --watch server/index.js\"",
     "build": "vite build",
