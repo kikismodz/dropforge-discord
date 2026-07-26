@@ -1,16 +1,18 @@
 {
   "name": "skinova-discord-activity",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "private": true,
   "type": "module",
-  "description": "Skinova Discord Activity — strict exact CS2 skin image mapping and Discord server installer",
+  "description": "Skinova Discord Activity — canonical CS2 drop catalogue, exact images, deterministic migration and Discord server installer",
   "scripts": {
     "dev": "concurrently -k -n CLIENT,SERVER -c cyan,magenta \"vite --host 0.0.0.0\" \"node --watch server/index.js\"",
     "build": "vite build",
-    "start": "node scripts/sync-skin-manifest.mjs && node server/index.js",
+    "start": "node scripts/sync-drop-catalog.mjs && node server/index.js",
     "demo": "npm run build && npm start",
     "register": "node scripts/register-commands.js",
-    "sync:skins": "node scripts/sync-skin-manifest.mjs"
+    "sync:skins": "node scripts/sync-drop-catalog.mjs",
+    "sync:catalog": "node scripts/sync-drop-catalog.mjs",
+    "validate:catalog": "node scripts/validate-drop-catalog.mjs"
   },
   "dependencies": {
     "@discord/embedded-app-sdk": "^2.5.0",

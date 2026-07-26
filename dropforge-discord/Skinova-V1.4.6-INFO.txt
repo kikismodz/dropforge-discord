@@ -1,0 +1,33 @@
+SKINOVA V1.4.6 — CATALOGUE CANONIQUE ET MIGRATION
+
+Base : Skinova V1.4.5
+
+CHANGEMENTS
+- Nouveau catalogue `server/drop-catalog.json` indexé par ID de drop.
+- Synchronisation depuis les champs structurés `weapon.name` et `pattern.name` de CSGO-API.
+- Correspondance exacte prioritaire.
+- Toute combinaison invalide est remplacée de façon déterministe par un vrai skin du même modèle d'arme.
+- Sélection de remplacement avec rareté la plus proche et répartition pour éviter les doublons excessifs.
+- Image exacte, identifiant catalogue, paint index, float min/max et rareté catalogue enregistrés.
+- Migration automatique des caisses, inventaires, historiques, battles et Trade Ups par itemId.
+- Les images personnalisées importées dans Skinova Control sont conservées.
+- Dernier catalogue local conservé si l'API est indisponible.
+- Endpoint de diagnostic : /api/catalog-status
+- Commande de validation : npm run validate:catalog
+
+RAILWAY
+Build Command : npm run build
+Start Command : npm start
+
+LOGS ATTENDUS
+[Skinova catalogue] 360/360 drops valides · X exacts · Y remplacés · 0 non résolus.
+[Skinova images] 360/360 images canoniques associées.
+
+TESTS EFFECTUÉS
+- Contrôle de syntaxe Node sur les scripts, le serveur, le catalogue et la migration.
+- Simulation de 360 drops avec catalogue structuré local : 360/360 valides.
+- Test d'une combinaison volontairement invalide : remplacement par un vrai skin de la même arme.
+- Test de migration : caisse, inventaire, historique et résultat de battle mis à jour par itemId.
+
+LIMITATION DE TEST
+Le téléchargement du catalogue réel a lieu sur Railway au démarrage. L'environnement de fabrication n'a pas pu exécuter ce téléchargement réseau final, mais le même endpoint est déjà accessible depuis le déploiement Railway actuel.

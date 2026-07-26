@@ -1,6 +1,14 @@
-# Skinova Discord V1.3
+# Skinova Discord V1.4.6
 
 Version Skinova avec 30 caisses, Trade Up Provably Fair, niveaux, XP, rangs et récompenses fictives.
+
+## Catalogue canonique V1.4.6
+
+Les drops sont synchronisés par ID avec le catalogue structuré CSGO-API. Toute combinaison arme/finition invalide est remplacée par un skin réel du même modèle, puis les anciennes données sont migrées automatiquement. Voir `SKINOVA_V1.4.6_INSTALL.md`.
+
+## Catalogue réel V1.4
+
+Les noms générés ont été remplacés par des combinaisons arme/finition existantes dans Counter-Strike 2. Les valeurs, probabilités, états, StatTrak, niveaux et Trade Ups restent inchangés.
 
 ## Nouveautés V1.3
 
