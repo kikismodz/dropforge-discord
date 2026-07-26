@@ -153,42 +153,41 @@ function normalize(input) {
     result.meta.catalogVersion = 5;
   }
 
-  // Rafraîchit les visuels génériques avec le manifest chargé au démarrage.
-  // Les images personnalisées de l'admin (data URL ou domaine tiers) sont conservées.
+  // V1.4.5 : applique uniquement le mapping strict du catalogue.
+  // Toute ancienne URL automatique incorrecte est remplacée par l'image canonique
+  // exacte, ou par le visuel générique si aucune correspondance exacte n'existe.
+  // Les images personnalisées importées par un administrateur sont conservées.
   {
     const definitions = new Map();
     for (const caseDef of base.cases) {
       for (const drop of caseDef.items || []) definitions.set(drop.id, drop);
     }
-    const canReplace = (current, canonical) => {
-      const value = String(current || '');
-      const next = String(canonical || '');
-      if (!next || next.startsWith('/assets/weapons/')) return false;
-      return !value
-        || value.startsWith('/assets/weapons/')
-        || value.includes('raw.githubusercontent.com/ByMykel/')
-        || value.includes('git.hubp.de/raw-githubusercontent-com/ByMykel/')
-        || value.includes('bymykel.github.io/CSGO-API/');
+    const isManagedImage = (value) => {
+      const image = String(value || '');
+      return !image
+        || image.startsWith('/assets/weapons/')
+        || image.includes('raw.githubusercontent.com/ByMykel/')
+        || image.includes('counter-strike-image-tracker')
+        || image.includes('bymykel.github.io/CSGO-API/')
+        || image.includes('git.hubp.de/raw-githubusercontent-com/ByMykel/');
+    };
+    const applyCanonical = (target) => {
+      const canonical = definitions.get(target?.itemId || target?.id);
+      if (!canonical || !isManagedImage(target.image)) return;
+      target.image = canonical.image;
     };
     for (const caseDef of result.cases || []) {
-      for (const drop of caseDef.items || []) {
-        const canonical = definitions.get(drop.id);
-        if (canonical && canReplace(drop.image, canonical.image)) drop.image = canonical.image;
-      }
+      for (const drop of caseDef.items || []) applyCanonical(drop);
     }
-    const refreshOwned = (owned) => {
-      const canonical = definitions.get(owned?.itemId);
-      if (canonical && canReplace(owned.image, canonical.image)) owned.image = canonical.image;
-    };
     for (const user of result.users || []) {
-      (user.inventory || []).forEach(refreshOwned);
+      (user.inventory || []).forEach(applyCanonical);
       for (const entry of user.history || []) {
         for (const key of ['items', 'sourceItems']) {
-          if (Array.isArray(entry?.[key])) entry[key].forEach(refreshOwned);
+          if (Array.isArray(entry?.[key])) entry[key].forEach(applyCanonical);
         }
       }
     }
-    result.meta.catalogVersion = Math.max(6, Number(result.meta.catalogVersion || 0));
+    result.meta.catalogVersion = Math.max(7, Number(result.meta.catalogVersion || 0));
   }
 
   result.users = Array.isArray(result.users) && result.users.length ? result.users : base.users;
