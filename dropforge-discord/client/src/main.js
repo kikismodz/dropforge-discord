@@ -6,6 +6,43 @@ const qs = new URLSearchParams(location.search);
 const insideDiscord = qs.has('frame_id') || qs.has('instance_id');
 const apiBase = insideDiscord ? '/.proxy/api' : '/api';
 const socketPath = insideDiscord ? '/.proxy/socket.io' : '/socket.io';
+
+// Discord Activities expose the origin server through the /.proxy prefix.
+// API calls already use that prefix, but <img src="/api/..."> does not pass
+// through the fetch helper. This observer rewrites every Skinova image-proxy URL
+// before the Discord WebView requests it, including images added later by modals,
+// openings, battles, inventory refreshes and Trade Ups.
+function proxiedMediaUrl(value) {
+  const url = String(value || '');
+  if (insideDiscord && url.startsWith('/api/skin-image/')) return `/.proxy${url}`;
+  return url;
+}
+function fixDiscordImageElement(image) {
+  if (!insideDiscord || !(image instanceof HTMLImageElement)) return;
+  const source = image.getAttribute('src') || '';
+  const fixed = proxiedMediaUrl(source);
+  if (fixed !== source) image.setAttribute('src', fixed);
+}
+function installDiscordImageProxyFix() {
+  if (!insideDiscord) return;
+  const scan = (root) => {
+    if (root instanceof HTMLImageElement) fixDiscordImageElement(root);
+    if (root?.querySelectorAll) root.querySelectorAll('img[src^="/api/skin-image/"]').forEach(fixDiscordImageElement);
+  };
+  scan(document);
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === 'attributes') fixDiscordImageElement(mutation.target);
+      for (const node of mutation.addedNodes || []) scan(node);
+    }
+  });
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['src'],
+  });
+}
 const rarityColor = { consumer:'#9aa3b8', industrial:'#58a6ff', 'mil-spec':'#536dff', restricted:'#a95cff', classified:'#ff4fb2', covert:'#ff4b55', gold:'#ffc447' };
 const rarityOrder = ['consumer','industrial','mil-spec','restricted','classified','covert','gold'];
 const rarityLabel = { consumer:'Consumer', industrial:'Industrial', 'mil-spec':'Mil-Spec', restricted:'Restricted', classified:'Classified', covert:'Covert', gold:'Gold' };
@@ -856,6 +893,8 @@ async function proofModal(proof){
   }catch(error){toast(`Vérification impossible : ${error.message}`,'bad');}
 }
 
+
+installDiscordImageProxyFix();
 
 document.addEventListener('click', handleClick);
 document.addEventListener('change',(event)=>{
