@@ -25,6 +25,8 @@ const state = {
   admin: null,
   socket: null,
   discord: null,
+  accessToken: null,
+  authError: null,
   fair: null,
   fairData: null,
   lastProofs: [],
@@ -96,14 +98,19 @@ function avatar(user, size = '') {
   return `<span class="avatar ${size}">${esc(initials(user?.username))}</span>`;
 }
 function api(path, options = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  if (state.accessToken && !headers.Authorization) headers.Authorization = `Bearer ${state.accessToken}`;
   return fetch(`${apiBase}${path}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     ...options,
+    headers,
     body: options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body,
   }).then(async (response) => {
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || `Erreur ${response.status}`);
+    if (!response.ok) {
+      const detail = payload.error_description || payload.message || payload.error || `Erreur ${response.status}`;
+      throw new Error(detail);
+    }
     return payload;
   });
 }
@@ -192,24 +199,37 @@ function closeModal() { document.getElementById('modalRoot').innerHTML = ''; if 
 
 async function initDiscord() {
   state.config = await api('/config');
-  if (insideDiscord && state.config.clientId) {
-    try {
-      const sdk = new DiscordSDK(state.config.clientId);
-      state.discord = sdk;
-      await sdk.ready();
-      const { code } = await sdk.commands.authorize({
-        client_id: state.config.clientId,
-        response_type: 'code',
-        state: '',
-        prompt: 'none',
-        scope: ['identify', 'applications.commands'],
-      });
-      const token = await api('/token', { method: 'POST', body: { code } });
-      await sdk.commands.authenticate({ access_token: token.access_token });
-      await api('/session/discord', { method: 'POST', body: { access_token: token.access_token } });
-    } catch (error) {
-      console.warn('Discord SDK fallback:', error);
-    }
+  if (!insideDiscord) return;
+  if (!state.config.clientId) throw new Error('DISCORD_CLIENT_ID absent sur Railway');
+
+  try {
+    const sdk = new DiscordSDK(state.config.clientId);
+    state.discord = sdk;
+    await sdk.ready();
+    const { code } = await sdk.commands.authorize({
+      client_id: state.config.clientId,
+      response_type: 'code',
+      state: '',
+      prompt: 'none',
+      scope: ['identify', 'applications.commands'],
+    });
+    if (!code) throw new Error('Discord n’a pas renvoyé de code OAuth');
+
+    const token = await api('/token', { method: 'POST', body: { code } });
+    if (!token.access_token) throw new Error('Discord n’a pas renvoyé de jeton d’accès');
+    state.accessToken = token.access_token;
+
+    const auth = await sdk.commands.authenticate({ access_token: token.access_token });
+    if (!auth) throw new Error('La commande authenticate de Discord a échoué');
+
+    await api('/session/discord', {
+      method: 'POST',
+      body: { access_token: token.access_token },
+    });
+  } catch (error) {
+    state.authError = error instanceof Error ? error.message : String(error);
+    console.error('Authentification Discord Skinova :', error);
+    throw new Error(`Connexion Discord impossible : ${state.authError}`);
   }
 }
 
@@ -250,7 +270,7 @@ function connectSocket() {
   state.socket.on('cases:update', async () => { const p = await api('/cases'); state.cases = p.cases; renderMain(); });
 }
 function renderLoading() {
-  document.getElementById('app').innerHTML = `<div class="loading-screen"><div class="logo-mark pulse">SV</div><strong>SKINOVA</strong><small>Chargement de Skinova V1.3…</small></div>`;
+  document.getElementById('app').innerHTML = `<div class="loading-screen"><div class="logo-mark pulse">SV</div><strong>SKINOVA</strong><small>Chargement de Skinova V1.4.6…</small></div>`;
 }
 
 function navButton(id, icon, label) {
@@ -263,7 +283,7 @@ function render() {
       <aside class="skinova-sidebar">
         <div class="skinova-brand" data-nav="home">
           <span class="skinova-emblem"><i></i></span>
-          <div><strong>SKINOVA</strong><small>DISCORD ACTIVITY · V1.3</small></div>
+          <div><strong>SKINOVA</strong><small>DISCORD ACTIVITY · V1.3.1</small></div>
         </div>
         <div class="skinova-user-mini">
           ${avatar(state.user,'small')}
@@ -300,7 +320,7 @@ function render() {
           </div>
         </header>
         <main class="skinova-main" id="mainStage"></main>
-        <footer class="skinova-statusbar"><span><i></i> ${state.presence.length || 1} MEMBRE(S) EN LIGNE</span><b>ÉVÉNEMENT · DROP HEAT ACTIF</b><span>SKINOVA V1.3 · CRÉDITS FICTIFS</span></footer>
+        <footer class="skinova-statusbar"><span><i></i> ${state.presence.length || 1} MEMBRE(S) EN LIGNE</span><b>ÉVÉNEMENT · DROP HEAT ACTIF</b><span>SKINOVA V1.4.6 · CRÉDITS FICTIFS</span></footer>
       </section>
       <nav class="skinova-mobile-nav">
         ${navButton('home','⌂','Accueil')}${navButton('cases','▣','Caisses')}${navButton('inventory','▦','Inventaire')}${navButton('tradeup','⇧','Trade Up')}${navButton('battles','⚔','Battles')}${navButton('upgrade','↗','Upgrade')}
