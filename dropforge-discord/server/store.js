@@ -190,6 +190,87 @@ function normalize(input) {
     result.meta.catalogVersion = Math.max(7, Number(result.meta.catalogVersion || 0));
   }
 
+
+  // V1.4.6 : catalogue canonique par ID de drop.
+  // Le script de démarrage construit un catalogue à partir des champs structurés
+  // weapon.name + pattern.name de l'API CS2, puis remplace de façon déterministe
+  // toute combinaison invalide par un vrai skin du même modèle d'arme.
+  {
+    const definitions = new Map();
+    const signatureRows = [];
+    for (const caseDef of base.cases || []) {
+      for (const drop of caseDef.items || []) {
+        definitions.set(String(drop.id), drop);
+        signatureRows.push([drop.id, drop.weapon, drop.name, drop.image, drop.catalogId || '']);
+      }
+    }
+    signatureRows.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    const signature = crypto.createHash('sha256').update(JSON.stringify(signatureRows)).digest('hex');
+    const isManagedImage = (value) => {
+      const image = String(value || '');
+      return !image
+        || image.startsWith('/assets/weapons/')
+        || image.includes('raw.githubusercontent.com/ByMykel/')
+        || image.includes('counter-strike-image-tracker')
+        || image.includes('bymykel.github.io/CSGO-API/')
+        || image.includes('git.hubp.de/raw-githubusercontent-com/ByMykel/');
+    };
+    const applyDefinition = (target, explicitId = null) => {
+      if (!target || typeof target !== 'object') return false;
+      const id = String(explicitId || target.itemId || target.id || '');
+      const canonical = definitions.get(id);
+      if (!canonical) return false;
+      target.weapon = canonical.weapon;
+      target.name = canonical.name;
+      target.rarity = canonical.rarity;
+      target.stattrak = target.uid ? Boolean(target.stattrak) : canonical.stattrak;
+      target.catalogId = canonical.catalogId || null;
+      target.paintIndex = canonical.paintIndex ?? null;
+      target.catalogRarity = canonical.catalogRarity || null;
+      target.minFloat = canonical.minFloat ?? null;
+      target.maxFloat = canonical.maxFloat ?? null;
+      target.catalogMatch = canonical.catalogMatch || null;
+      if (isManagedImage(target.image)) target.image = canonical.image;
+      return true;
+    };
+    const migrateDeep = (value, seen = new Set()) => {
+      if (!value || typeof value !== 'object' || seen.has(value)) return;
+      seen.add(value);
+      if (!Array.isArray(value)) applyDefinition(value);
+      for (const child of Object.values(value)) migrateDeep(child, seen);
+    };
+
+    if (result.meta.dropCatalogSignature !== signature) {
+      for (const caseDef of result.cases || []) {
+        const baseCase = (base.cases || []).find((entry) => entry.id === caseDef.id);
+        if (!baseCase) continue;
+        const baseDrops = new Map((baseCase.items || []).map((drop) => [String(drop.id), drop]));
+        for (const drop of caseDef.items || []) {
+          const canonical = baseDrops.get(String(drop.id));
+          if (!canonical) continue;
+          drop.weapon = canonical.weapon;
+          drop.name = canonical.name;
+          drop.rarity = canonical.rarity;
+          drop.stattrak = canonical.stattrak;
+          drop.catalogId = canonical.catalogId || null;
+          drop.paintIndex = canonical.paintIndex ?? null;
+          drop.catalogRarity = canonical.catalogRarity || null;
+          drop.minFloat = canonical.minFloat ?? null;
+          drop.maxFloat = canonical.maxFloat ?? null;
+          drop.catalogMatch = canonical.catalogMatch || null;
+          if (isManagedImage(drop.image)) drop.image = canonical.image;
+        }
+      }
+      for (const user of result.users || []) {
+        migrateDeep(user.inventory || []);
+        migrateDeep(user.history || []);
+      }
+      migrateDeep(result.battles || []);
+      result.meta.dropCatalogSignature = signature;
+      result.meta.catalogVersion = Math.max(8, Number(result.meta.catalogVersion || 0));
+    }
+  }
+
   result.users = Array.isArray(result.users) && result.users.length ? result.users : base.users;
   result.users.forEach(ensureUser);
   result.battles ||= [];

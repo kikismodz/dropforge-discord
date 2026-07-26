@@ -8,6 +8,7 @@ import cookieParser from 'cookie-parser';
 import { createServer } from 'node:http';
 import { Server as SocketServer } from 'socket.io';
 import { startDiscordBot } from './bot.js';
+import { dropCatalogSnapshot } from './drop-catalog.js';
 import {
   audit,
   getState,
@@ -36,6 +37,7 @@ const dist = path.join(root, 'dist');
 const port = Number(process.env.PORT) || 3000;
 const demoMode = !(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET);
 const sessions = new Map();
+const bearerSessions = new Map();
 const app = express();
 const httpServer = createServer(app);
 const io = new SocketServer(httpServer, { cors: { origin: true, credentials: true } });
@@ -53,20 +55,47 @@ function newSession(userId) {
 }
 
 function sessionUser(req) {
-  const sid = req.cookies?.df_session;
+  const sid = req.cookies?.df_session || req.cookies?.skinova_session;
   const session = sid ? sessions.get(sid) : null;
   return session ? getUser(session.userId) : null;
+}
+
+async function bearerUser(req) {
+  const header = String(req.get('authorization') || '');
+  const match = /^Bearer\s+(.+)$/i.exec(header);
+  if (!match) return null;
+  const accessToken = match[1].trim();
+  if (!accessToken) return null;
+
+  const cached = bearerSessions.get(accessToken);
+  if (cached && cached.expiresAt > Date.now()) return getUser(cached.userId);
+
+  try {
+    const response = await fetch('https://discord.com/api/users/@me', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const profile = await response.json();
+    if (!response.ok || !profile?.id) return null;
+    const avatarUrl = profile.avatar ? `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.png?size=128` : '';
+    const user = upsertDiscordUser({ ...profile, avatarUrl });
+    user.admin = await hasAdminAccess(user);
+    bearerSessions.set(accessToken, { userId: user.id, expiresAt: Date.now() + 55 * 60 * 1000 });
+    save();
+    return user;
+  } catch {
+    return null;
+  }
 }
 
 function ensureDemoSession(req, res) {
   if (!demoMode || sessionUser(req)) return;
   const sid = newSession('demo-nova');
-  res.cookie('df_session', sid, { httpOnly: true, sameSite: 'lax', secure: false, maxAge: 30 * 24 * 60 * 60 * 1000 });
+  res.cookie('skinova_session', sid, { httpOnly: true, sameSite: 'lax', secure: false, maxAge: 30 * 24 * 60 * 60 * 1000 });
 }
 
-function requireUser(req, res, next) {
+async function requireUser(req, res, next) {
   ensureDemoSession(req, res);
-  const user = sessionUser(req) || (demoMode ? getUser('demo-nova') : null);
+  const user = sessionUser(req) || await bearerUser(req) || (demoMode ? getUser('demo-nova') : null);
   if (!user) return res.status(401).json({ error: 'Authentification Discord requise' });
   if (user.banned) return res.status(403).json({ error: 'Compte suspendu' });
   req.user = user;
@@ -93,7 +122,7 @@ async function hasAdminAccess(user) {
 }
 
 async function requireAdmin(req, res, next) {
-  requireUser(req, res, async () => {
+  await requireUser(req, res, async () => {
     if (!(await hasAdminAccess(req.user))) return res.status(403).json({ error: 'Accès administrateur requis' });
     next();
   });
@@ -118,6 +147,21 @@ function sanitizeCase(entry) {
     })) : [],
   };
 }
+
+app.get('/api/catalog-status', (_req, res) => {
+  const catalog = Object.values(dropCatalogSnapshot());
+  const exact = catalog.filter((entry) => entry?.match === 'exact').length;
+  const replaced = catalog.filter((entry) => entry?.match === 'replacement').length;
+  const canonicalImages = catalog.filter((entry) => /^https?:\/\//i.test(String(entry?.image || ''))).length;
+  res.json({
+    version: '1.4.6',
+    drops: catalog.length,
+    exact,
+    replaced,
+    canonicalImages,
+    complete: catalog.length > 0 && canonicalImages === catalog.length,
+  });
+});
 
 app.get('/api/config', (_req, res) => {
   res.json({
@@ -166,7 +210,10 @@ app.post('/api/session/discord', async (req, res) => {
     user.admin = await hasAdminAccess(user);
     save();
     const sid = newSession(user.id);
-    res.cookie('df_session', sid, { httpOnly: true, sameSite: 'none', secure: true, maxAge: 30 * 24 * 60 * 60 * 1000 });
+    bearerSessions.set(accessToken, { userId: user.id, expiresAt: Date.now() + 55 * 60 * 1000 });
+    const cookieOptions = { httpOnly: true, sameSite: 'none', secure: true, maxAge: 30 * 24 * 60 * 60 * 1000, partitioned: true, priority: 'high' };
+    res.cookie('skinova_session', sid, cookieOptions);
+    res.cookie('df_session', sid, cookieOptions);
     res.json({ user: publicUser(user) });
   } catch (error) {
     res.status(502).json({ error: `Session Discord impossible : ${error.message}` });
@@ -177,6 +224,7 @@ app.post('/api/logout', (req, res) => {
   const sid = req.cookies?.df_session;
   if (sid) sessions.delete(sid);
   res.clearCookie('df_session');
+  res.clearCookie('skinova_session');
   res.json({ ok: true });
 });
 

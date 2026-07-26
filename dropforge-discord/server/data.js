@@ -1,21 +1,97 @@
+import { canonicalDrop } from './drop-catalog.js';
+
 const wear = { FN: 8, MW: 18, FT: 42, WW: 20, BS: 12 };
 const multipliers = { FN: 1, MW: 0.88, FT: 0.68, WW: 0.52, BS: 0.4, ST: 1.35 };
 
 function item(id, weapon, name, value, weight, rarity, image, stattrak = 10) {
-  return { id, weapon, name, value, weight, rarity, image, wear: { ...wear }, stattrak };
+  const canonical = canonicalDrop(id, { weapon, name, image, rarity });
+  const glove = /gloves?|hand wraps/i.test(String(canonical.weapon || weapon));
+  return {
+    id,
+    weapon: canonical.weapon || weapon,
+    name: canonical.name || name,
+    value,
+    weight,
+    rarity: canonical.rarity || rarity,
+    image: canonical.image || image,
+    wear: { ...wear },
+    stattrak: glove ? 0 : stattrak,
+    catalogId: canonical.catalogId || null,
+    paintIndex: canonical.paintIndex ?? null,
+    catalogRarity: canonical.catalogRarity || null,
+    minFloat: canonical.minFloat ?? null,
+    maxFloat: canonical.maxFloat ?? null,
+    catalogMatch: canonical.catalogMatch || 'bundled',
+  };
 }
 
 
 const generatedMultipliers = [0.08, 0.14, 0.22, 0.32, 0.44, 0.58, 0.72, 1.15, 1.55, 2.2, 4.2, 9];
 const generatedWeights = [18, 16, 14, 12, 10, 6, 4, 10, 5, 3, 1.5, 0.5];
 const generatedRarities = ['consumer','industrial','mil-spec','restricted','restricted','classified','classified','covert','covert','covert','gold','gold'];
-const generatedSuffixes = ['Nightline','Circuit','Reactor','Afterburn','Vortex','Overdrive','Revenant','Eclipse','Sovereign','Apex','Relic','Ascendant'];
 const weaponImages = {
   'AK-47': '/assets/weapons/ak.webp', AWP: '/assets/weapons/awp.webp', Knife: '/assets/weapons/knife.webp', Gloves: '/assets/weapons/gloves.webp',
   'USP-S': '/assets/weapons/pistol.webp', 'Glock-18': '/assets/weapons/pistol.webp', 'Desert Eagle': '/assets/weapons/pistol.webp', P250: '/assets/weapons/pistol.webp',
-  MP9: '/assets/weapons/smg.webp', MAC10: '/assets/weapons/smg.webp', MP7: '/assets/weapons/smg.webp', UMP45: '/assets/weapons/smg.webp',
-  'M4A1-S': '/assets/weapons/rifle.webp', M4A4: '/assets/weapons/rifle.webp', FAMAS: '/assets/weapons/rifle.webp', AUG: '/assets/weapons/rifle.webp', Galil: '/assets/weapons/rifle.webp',
+  MP9: '/assets/weapons/smg.webp', 'MAC-10': '/assets/weapons/smg.webp', MP7: '/assets/weapons/smg.webp', 'UMP-45': '/assets/weapons/smg.webp',
+  'M4A1-S': '/assets/weapons/rifle.webp', M4A4: '/assets/weapons/rifle.webp', FAMAS: '/assets/weapons/rifle.webp', AUG: '/assets/weapons/rifle.webp', 'Galil AR': '/assets/weapons/rifle.webp',
 };
+
+// Noms issus du catalogue réel Counter-Strike 2. Les tableaux sont ordonnés
+// approximativement du drop courant au drop premium pour conserver l'économie existante.
+const realSkinPools = {
+  'USP-S': ['Forest Leaves','Night Ops','Torque','Cortex','Cyrex','The Traitor','Printstream','Kill Confirmed','Orion','Neo-Noir','Whiteout','Target Acquired'],
+  'Glock-18': ['High Beam','Moonrise','Grinder','Water Elemental','Vogue','Bullet Queen','Wasteland Rebel','Neo-Noir','Gamma Doppler','Fade','Dragon Tattoo','Twilight Galaxy'],
+  P250: ['Sand Dune','Cassette','Valence','Supernova','Franklin','Wingshot','Muertos','Asiimov','See Ya Later',"Apep's Curse",'Nuclear Threat','Whiteout'],
+  'Desert Eagle': ['Mudder','Bronze Deco','Light Rail','Naga','Mecha Industries','Kumicho Dragon','Conspiracy','Code Red','Printstream','Ocean Drive','Blaze','Fennec Fox'],
+  MP9: ['Sand Dashed','Capillary','Bioleak','Goo','Ruby Poison Dart','Rose Iron','Airlock','Food Chain','Starlight Protector','Hot Rod',"Pandora's Box",'Wild Lily'],
+  'MAC-10': ['Palm','Lapis Gator','Pipe Down','Malachite','Heat','Disco Tech','Toybox','Propaganda','Stalker','Neon Rider','Fade','Hot Snakes'],
+  MP7: ['Forest DDPAT','Armor Core','Cirrus','Akoben','Powercore','Special Delivery','Nemesis','Bloodsport','Abyssal Apparition','Ocean Foam','Whiteout','Fade'],
+  'UMP-45': ['Urban DDPAT','Carbon Fiber','Riot','Arctic Wolf','Scaffold','Exposure','Primal Saber','Momentum','Wild Child','Blaze',"Minotaur's Labyrinth",'Day Lily'],
+  'AK-47': ['Safari Mesh','Uncharted','Elite Build','Slate','Redline','Ice Coaled','Neon Revolution','Bloodsport','Neon Rider','Vulcan','Fire Serpent','Wild Lotus'],
+  'M4A1-S': ['Boreal Forest','Nitro','Basilisk','Guardian','Nightmare','Decimator','Mecha Industries','Hyper Beast','Printstream','Blue Phosphor','Icarus Fell','Welcome to the Jungle'],
+  M4A4: ['Urban DDPAT','Magnesium','Griffin','Evil Daimyo','Tooth Fairy','Desolate Space','Neo-Noir','The Emperor','Asiimov','Eye of Horus','Poseidon','Howl'],
+  FAMAS: ['Colony','Survivor Z','Valence','Neural Net','Mecha Industries','Eye of Athena','Roll Cage','Commemoration','Waters of Nephthys','Prime Conspiracy','Spitfire','Sundown'],
+  AUG: ['Contractor','Ricochet','Arctic Wolf','Torque','Stymphalian','Syd Mead','Momentum','Chameleon','Bengal Tiger','Flame Jörmungandr','Midnight Lily','Akihabara Accept'],
+  'Galil AR': ['Hunting Blind','Tuxedo','Rocket Pop','Signal','Stone Cold','Firefight','Sugar Rush','Chromatic Aberration','Eco','Cerberus','Phoenix Blacklight','Aqua Terrace'],
+  AWP: ['Safari Mesh','Acheron','Worm God','Atheris','Mortis','Fever Dream','Redline','Asiimov','Hyper Beast','Containment Breach','Medusa','Dragon Lore'],
+};
+
+const knifePool = [
+  { weapon:'Navaja Knife', name:'Safari Mesh' },
+  { weapon:'Gut Knife', name:'Scorched' },
+  { weapon:'Falchion Knife', name:'Blue Steel' },
+  { weapon:'Huntsman Knife', name:'Crimson Web' },
+  { weapon:'Bowie Knife', name:'Damascus Steel' },
+  { weapon:'Flip Knife', name:'Ultraviolet' },
+  { weapon:'Bayonet', name:'Tiger Tooth' },
+  { weapon:'Karambit', name:'Doppler' },
+  { weapon:'Butterfly Knife', name:'Marble Fade' },
+  { weapon:'M9 Bayonet', name:'Gamma Doppler' },
+  { weapon:'Karambit', name:'Fade' },
+  { weapon:'Butterfly Knife', name:'Lore' },
+];
+
+const glovePool = [
+  { weapon:'Hand Wraps', name:'Duct Tape' },
+  { weapon:'Hydra Gloves', name:'Mangrove' },
+  { weapon:'Bloodhound Gloves', name:'Bronzed' },
+  { weapon:'Broken Fang Gloves', name:'Needle Point' },
+  { weapon:'Driver Gloves', name:'Racing Green' },
+  { weapon:'Moto Gloves', name:'Transport' },
+  { weapon:'Specialist Gloves', name:'Buckshot' },
+  { weapon:'Driver Gloves', name:'Overtake' },
+  { weapon:'Sport Gloves', name:'Big Game' },
+  { weapon:'Specialist Gloves', name:'Crimson Kimono' },
+  { weapon:'Sport Gloves', name:'Vice' },
+  { weapon:'Sport Gloves', name:"Pandora's Box" },
+];
+
+function realDefinition(weapon, tierIndex) {
+  if (weapon === 'Knife') return knifePool[tierIndex % knifePool.length];
+  if (weapon === 'Gloves') return glovePool[tierIndex % glovePool.length];
+  const names = realSkinPools[weapon] || realSkinPools['M4A1-S'];
+  return { weapon, name: names[tierIndex % names.length] };
+}
 
 function generatedCase(config) {
   const weapons = config.weapons;
@@ -28,16 +104,17 @@ function generatedCase(config) {
     image: config.image,
     tag: config.tag,
     items: generatedMultipliers.map((multiplier, index) => {
-      const weapon = weapons[index % weapons.length];
-      const noStatTrak = weapon === 'Knife' || weapon === 'Gloves';
+      const requestedWeapon = weapons[index % weapons.length];
+      const definition = realDefinition(requestedWeapon, index);
+      const noStatTrak = requestedWeapon === 'Gloves';
       return item(
         `${config.id}-${index + 1}`,
-        weapon,
-        `${config.theme} ${generatedSuffixes[index]}`,
+        definition.weapon,
+        definition.name,
         Math.max(1, Math.round(config.price * multiplier * 100) / 100),
         generatedWeights[index],
         generatedRarities[index],
-        weaponImages[weapon] || '/assets/weapons/rifle.webp',
+        weaponImages[requestedWeapon] || '/assets/weapons/rifle.webp',
         noStatTrak ? 0 : 10,
       );
     }),
@@ -46,8 +123,8 @@ function generatedCase(config) {
 
 const additionalCases = [
   { id:'pistol-pulse', name:'PISTOL PULSE', price:20, accent:'#ff7a2f', image:'/assets/cases/confirmed-vault.webp', tag:'PISTOL STARTER', theme:'Pulse', weapons:['USP-S','Glock-18','P250','Desert Eagle'] },
-  { id:'smg-rush', name:'SMG RUSH', price:35, accent:'#20d8c8', image:'/assets/cases/budget-frenzy.webp', tag:'CLOSE RANGE', theme:'Rush', weapons:['MP9','MAC10','MP7','UMP45'] },
-  { id:'rifle-circuit', name:'RIFLE CIRCUIT', price:55, accent:'#5ca8ff', image:'/assets/cases/ak-legends.webp', tag:'RIFLE MIX', theme:'Circuit', weapons:['AK-47','M4A1-S','M4A4','FAMAS','Galil'] },
+  { id:'smg-rush', name:'SMG RUSH', price:35, accent:'#20d8c8', image:'/assets/cases/budget-frenzy.webp', tag:'CLOSE RANGE', theme:'Rush', weapons:['MP9','MAC-10','MP7','UMP-45'] },
+  { id:'rifle-circuit', name:'RIFLE CIRCUIT', price:55, accent:'#5ca8ff', image:'/assets/cases/ak-legends.webp', tag:'RIFLE MIX', theme:'Circuit', weapons:['AK-47','M4A1-S','M4A4','FAMAS','Galil AR'] },
   { id:'desert-crown', name:'DESERT CROWN', price:70, accent:'#e5b14b', image:'/assets/cases/confirmed-vault.webp', tag:'HEAVY PISTOLS', theme:'Crown', weapons:['Desert Eagle','USP-S','Glock-18','P250'] },
   { id:'m4-dominion', name:'M4 DOMINION', price:90, accent:'#6f91ff', image:'/assets/cases/ak-legends.webp', tag:'M4 COLLECTION', theme:'Dominion', weapons:['M4A1-S','M4A4','FAMAS','AUG'] },
   { id:'neon-arsenal', name:'NEON ARSENAL', price:105, accent:'#ff4ca3', image:'/assets/cases/royal-overdrive.webp', tag:'NEON MIX', theme:'Neon', weapons:['AK-47','M4A1-S','AWP','USP-S','MP9'] },
@@ -141,25 +218,25 @@ export const initialCases = [
       item('bf9','M4A1-S','Nightmare',65,5,'covert','/assets/weapons/rifle.webp'),
       item('bf10','AK-47','Redline',96,3.5,'covert','/assets/weapons/ak.webp'),
       item('bf11','AWP','Asiimov',220,2.5,'gold','/assets/weapons/awp.webp'),
-      item('bf12','Knife','Doppler Fang',760,1,'gold','/assets/weapons/knife.webp',0),
+      item('bf12','Butterfly Knife','Doppler',760,1,'gold','/assets/weapons/knife.webp'),
     ],
   },
   {
     id: 'knife-protocol', name: 'KNIFE PROTOCOL', price: 260, active: true,
     accent: '#ffc447', image: '/assets/cases/knife-protocol.webp', tag: 'KNIFE VAULT',
     items: [
-      item('kp1','Knife','Safari Mesh',26,19,'consumer','/assets/weapons/knife.webp',0),
-      item('kp2','Knife','Scorched',45,17,'industrial','/assets/weapons/knife.webp',0),
-      item('kp3','Knife','Blue Steel',70,14,'mil-spec','/assets/weapons/knife.webp',0),
-      item('kp4','Knife','Crimson Web',105,11,'restricted','/assets/weapons/knife.webp',0),
-      item('kp5','Knife','Damascus Steel',150,8,'restricted','/assets/weapons/knife.webp',0),
-      item('kp6','Knife','Ultraviolet',205,6,'classified','/assets/weapons/knife.webp',0),
-      item('kp7','Knife','Tiger Tooth',255,5,'classified','/assets/weapons/knife.webp',0),
-      item('kp8','Knife','Doppler Phase',345,8,'covert','/assets/weapons/knife.webp',0),
-      item('kp9','Knife','Marble Fade',540,5,'covert','/assets/weapons/knife.webp',0),
-      item('kp10','Knife','Gamma Doppler',880,3.5,'covert','/assets/weapons/knife.webp',0),
-      item('kp11','Knife','Ruby',2100,2.5,'gold','/assets/weapons/knife.webp',0),
-      item('kp12','Knife','Emerald Crown',4800,1,'gold','/assets/weapons/knife.webp',0),
+      item('kp1','Navaja Knife','Safari Mesh',26,19,'consumer','/assets/weapons/knife.webp'),
+      item('kp2','Gut Knife','Scorched',45,17,'industrial','/assets/weapons/knife.webp'),
+      item('kp3','Falchion Knife','Blue Steel',70,14,'mil-spec','/assets/weapons/knife.webp'),
+      item('kp4','Huntsman Knife','Crimson Web',105,11,'restricted','/assets/weapons/knife.webp'),
+      item('kp5','Bowie Knife','Damascus Steel',150,8,'restricted','/assets/weapons/knife.webp'),
+      item('kp6','Flip Knife','Ultraviolet',205,6,'classified','/assets/weapons/knife.webp'),
+      item('kp7','Bayonet','Tiger Tooth',255,5,'classified','/assets/weapons/knife.webp'),
+      item('kp8','Karambit','Doppler',345,8,'covert','/assets/weapons/knife.webp'),
+      item('kp9','Butterfly Knife','Marble Fade',540,5,'covert','/assets/weapons/knife.webp'),
+      item('kp10','M9 Bayonet','Gamma Doppler',880,3.5,'covert','/assets/weapons/knife.webp'),
+      item('kp11','Karambit','Fade',2100,2.5,'gold','/assets/weapons/knife.webp'),
+      item('kp12','Butterfly Knife','Lore',4800,1,'gold','/assets/weapons/knife.webp'),
     ],
   },
   {
@@ -169,12 +246,12 @@ export const initialCases = [
       item('ro1','M4A1-S','Player Two',42,19,'consumer','/assets/weapons/rifle.webp'),
       item('ro2','AK-47','Bloodsport',72,17,'industrial','/assets/weapons/ak.webp'),
       item('ro3','AWP','Hyper Beast',112,14,'mil-spec','/assets/weapons/awp.webp'),
-      item('ro4','Gloves','Overtake',170,11,'restricted','/assets/weapons/gloves.webp',0),
-      item('ro5','Knife','Ultraviolet',240,8,'restricted','/assets/weapons/knife.webp',0),
+      item('ro4','Driver Gloves','Overtake',170,11,'restricted','/assets/weapons/gloves.webp',0),
+      item('ro5','M9 Bayonet','Ultraviolet',240,8,'restricted','/assets/weapons/knife.webp'),
       item('ro6','AK-47','Neon Rider',330,6,'classified','/assets/weapons/ak.webp'),
       item('ro7','AWP','Asiimov',410,5,'classified','/assets/weapons/awp.webp'),
-      item('ro8','Gloves','Crimson Kimono',580,8,'covert','/assets/weapons/gloves.webp',0),
-      item('ro9','Knife','Gamma Doppler',920,5,'covert','/assets/weapons/knife.webp',0),
+      item('ro8','Specialist Gloves','Crimson Kimono',580,8,'covert','/assets/weapons/gloves.webp',0),
+      item('ro9','Karambit','Gamma Doppler',920,5,'covert','/assets/weapons/knife.webp'),
       item('ro10','AWP','Medusa',1800,3.5,'gold','/assets/weapons/awp.webp'),
       item('ro11','AK-47','Wild Lotus',4200,2.5,'gold','/assets/weapons/ak.webp'),
       item('ro12','AWP','Dragon Lore',8500,1,'gold','/assets/weapons/awp.webp'),
