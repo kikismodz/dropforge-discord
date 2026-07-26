@@ -1,9 +1,9 @@
 {
   "name": "skinova-discord-activity",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "private": true,
   "type": "module",
-  "description": "Skinova Discord Activity — mapping complet des visuels et installateur Discord intégré",
+  "description": "Skinova Discord Activity — strict exact CS2 skin image mapping and Discord server installer",
   "scripts": {
     "dev": "concurrently -k -n CLIENT,SERVER -c cyan,magenta \"vite --host 0.0.0.0\" \"node --watch server/index.js\"",
     "build": "vite build",
