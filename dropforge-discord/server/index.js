@@ -148,18 +148,112 @@ function sanitizeCase(entry) {
   };
 }
 
+
+const skinImageCacheRoot = process.env.SKINOVA_IMAGE_CACHE_DIR || path.join('/tmp', 'skinova-skin-cache');
+const skinImageInflight = new Map();
+const skinImageFailures = new Set();
+
+function fallbackSkinAsset(record = {}) {
+  const weapon = String(record.weapon || '').toLowerCase();
+  if (/knife|bayonet|daggers/.test(weapon)) return '/assets/weapons/knife.webp';
+  if (/glove|hand wrap/.test(weapon)) return '/assets/weapons/gloves.webp';
+  if (/awp|ssg|scar|g3sg/.test(weapon)) return '/assets/weapons/awp.webp';
+  if (/ak-?47/.test(weapon)) return '/assets/weapons/ak.webp';
+  if (/mp|mac|ump|p90|bizon/.test(weapon)) return '/assets/weapons/smg.webp';
+  if (/usp|glock|p250|deagle|desert eagle|five|tec|cz|dual/.test(weapon)) return '/assets/weapons/pistol.webp';
+  return '/assets/weapons/rifle.webp';
+}
+
+function imageCachePaths(dropId, sourceUrl) {
+  const key = crypto.createHash('sha256').update(`${dropId}|${sourceUrl}`).digest('hex');
+  return {
+    body: path.join(skinImageCacheRoot, `${key}.bin`),
+    meta: path.join(skinImageCacheRoot, `${key}.json`),
+  };
+}
+
+async function fetchAndCacheSkinImage(dropId, sourceUrl) {
+  const cache = imageCachePaths(dropId, sourceUrl);
+  try {
+    const [body, metaRaw] = await Promise.all([
+      fs.promises.readFile(cache.body),
+      fs.promises.readFile(cache.meta, 'utf8'),
+    ]);
+    const meta = JSON.parse(metaRaw);
+    return { body, contentType: meta.contentType || 'image/png', cached: true };
+  } catch {}
+
+  await fs.promises.mkdir(skinImageCacheRoot, { recursive: true });
+  const response = await fetch(sourceUrl, {
+    redirect: 'follow',
+    headers: {
+      accept: 'image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8',
+      'user-agent': 'Skinova/1.4.8 image-proxy',
+      referer: 'https://github.com/ByMykel/CSGO-API',
+    },
+    signal: AbortSignal.timeout(Math.max(5000, Number(process.env.SKINOVA_IMAGE_TIMEOUT_MS) || 20000)),
+  });
+  if (!response.ok) throw new Error(`image distante HTTP ${response.status}`);
+  const contentType = String(response.headers.get('content-type') || 'image/png').split(';')[0].trim();
+  if (!contentType.startsWith('image/')) throw new Error(`contenu inattendu : ${contentType}`);
+  const body = Buffer.from(await response.arrayBuffer());
+  if (!body.length || body.length > 8 * 1024 * 1024) throw new Error(`taille image invalide : ${body.length}`);
+  await Promise.all([
+    fs.promises.writeFile(cache.body, body),
+    fs.promises.writeFile(cache.meta, JSON.stringify({ contentType, sourceUrl })),
+  ]);
+  return { body, contentType, cached: false };
+}
+
+async function sendSkinFallback(res, record) {
+  const fallback = fallbackSkinAsset(record);
+  const file = path.join(dist, fallback.replace(/^\//, ''));
+  res.set('Cache-Control', 'public, max-age=3600');
+  if (fs.existsSync(file)) return res.sendFile(file);
+  return res.status(404).end();
+}
+
+app.get('/api/skin-image/:dropId', async (req, res) => {
+  const dropId = String(req.params.dropId || '');
+  const record = dropCatalogSnapshot()[dropId];
+  const sourceUrl = String(record?.sourceImage || '');
+  if (!record || !/^https:\/\//i.test(sourceUrl)) return sendSkinFallback(res, record);
+
+  const inflightKey = `${dropId}|${sourceUrl}`;
+  try {
+    let task = skinImageInflight.get(inflightKey);
+    if (!task) {
+      task = fetchAndCacheSkinImage(dropId, sourceUrl).finally(() => skinImageInflight.delete(inflightKey));
+      skinImageInflight.set(inflightKey, task);
+    }
+    const image = await task;
+    res.set('Content-Type', image.contentType);
+    res.set('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
+    res.set('X-Skinova-Image', image.cached ? 'cache' : 'remote');
+    return res.send(image.body);
+  } catch (error) {
+    if (!skinImageFailures.has(dropId)) {
+      skinImageFailures.add(dropId);
+      console.warn(`[Skinova image proxy] ${dropId} : ${error?.message || error}`);
+    }
+    return sendSkinFallback(res, record);
+  }
+});
+
 app.get('/api/catalog-status', (_req, res) => {
   const catalog = Object.values(dropCatalogSnapshot());
   const exact = catalog.filter((entry) => entry?.match === 'exact').length;
   const replaced = catalog.filter((entry) => entry?.match === 'replacement').length;
-  const canonicalImages = catalog.filter((entry) => /^https?:\/\//i.test(String(entry?.image || ''))).length;
+  const canonicalImages = catalog.filter((entry) => /^https?:\/\//i.test(String(entry?.sourceImage || ''))).length;
+  const proxiedImages = catalog.filter((entry) => String(entry?.image || '').startsWith('/api/skin-image/')).length;
   res.json({
-    version: '1.4.6',
+    version: '1.4.8',
     drops: catalog.length,
     exact,
     replaced,
     canonicalImages,
-    complete: catalog.length > 0 && canonicalImages === catalog.length,
+    proxiedImages,
+    complete: catalog.length > 0 && canonicalImages === catalog.length && proxiedImages === catalog.length,
   });
 });
 
@@ -435,7 +529,7 @@ app.use((_req, res) => {
 });
 
 httpServer.listen(port, '0.0.0.0', async () => {
-  console.log(`Skinova Discord disponible sur http://localhost:${port}`);
+  console.log(`Skinova Discord V1.4.7 disponible sur http://localhost:${port}`);
   if (demoMode) console.log('[Mode démo] Aucun identifiant Discord requis.');
   try {
     botClient = await startDiscordBot({ token: process.env.DISCORD_TOKEN, publicUrl: process.env.ACTIVITY_URL || process.env.PUBLIC_URL, io });
