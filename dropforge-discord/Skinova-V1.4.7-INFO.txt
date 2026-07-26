@@ -1,0 +1,9 @@
+SKINOVA V1.4.7 — IMAGE PROXY
+
+- 360 drops canoniques conservés
+- URLs externes stockées dans sourceImage
+- URL affichée : /api/skin-image/<dropId>
+- téléchargement à la demande côté serveur
+- cache Railway dans /tmp
+- fallback local si le CDN est indisponible
+- aucune modification de data/db.json dans le patch
